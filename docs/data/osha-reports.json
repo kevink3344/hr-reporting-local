@@ -1,0 +1,30 @@
+[
+  {
+    "id": "osha-001",
+    "employeeNumber": "900001",
+    "reportedBy": "Test HR Admin",
+    "eventDate": "2026-01-15",
+    "siteName": "Test Oak Elementary",
+    "emergency": false,
+    "hospitalized": false,
+    "caseNumber": "CASE-TEST-001",
+    "injuryType": "Strain",
+    "daysMissed": 0,
+    "daysTransferred": 0,
+    "status": "open"
+  },
+  {
+    "id": "osha-002",
+    "employeeNumber": "900002",
+    "reportedBy": "Test School Staff",
+    "eventDate": "2026-02-20",
+    "siteName": "Test River High",
+    "emergency": true,
+    "hospitalized": true,
+    "caseNumber": "CASE-TEST-002",
+    "injuryType": "Laceration",
+    "daysMissed": 2,
+    "daysTransferred": 1,
+    "status": "closed"
+  }
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "school-001",
+    "schoolNumber": "3001",
+    "name": "Test Oak Elementary",
+    "type": "school",
+    "active": true
+  },
+  {
+    "id": "school-002",
+    "schoolNumber": "3002",
+    "name": "Test River High",
+    "type": "school",
+    "active": true
+  },
+  {
+    "id": "dept-001",
+    "schoolNumber": "9900",
+    "name": "Test Central Office",
+    "type": "department",
+    "active": true
+  }
+]

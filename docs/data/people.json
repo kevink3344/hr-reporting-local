@@ -1,0 +1,47 @@
+[
+  {
+    "personId": "person-001",
+    "employeeNumber": "900001",
+    "firstName": "Alex",
+    "lastName": "Example",
+    "fullName": "Example, Alex",
+    "email": "alex.example@example.test",
+    "organizationId": "school-001",
+    "organization": "Test Oak Elementary",
+    "positionName": "Teacher",
+    "costCenter": "0901",
+    "objectCode": "120",
+    "primaryFlag": "Y",
+    "activeAssignment": true
+  },
+  {
+    "personId": "person-002",
+    "employeeNumber": "900002",
+    "firstName": "Jordan",
+    "lastName": "Sample",
+    "fullName": "Sample, Jordan",
+    "email": "jordan.sample@example.test",
+    "organizationId": "school-002",
+    "organization": "Test River High",
+    "positionName": "Principal",
+    "costCenter": "0902",
+    "objectCode": "110",
+    "primaryFlag": "Y",
+    "activeAssignment": true
+  },
+  {
+    "personId": "person-003",
+    "employeeNumber": "900003",
+    "firstName": "Taylor",
+    "lastName": "Fixture",
+    "fullName": "Fixture, Taylor",
+    "email": "taylor.fixture@example.test",
+    "organizationId": "dept-001",
+    "organization": "Test Central Office",
+    "positionName": "HR Analyst",
+    "costCenter": "0935",
+    "objectCode": "118",
+    "primaryFlag": "Y",
+    "activeAssignment": true
+  }
+]

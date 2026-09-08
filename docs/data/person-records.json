@@ -1,0 +1,70 @@
+[
+  {
+    "personId": "person-001",
+    "identity": {
+      "fullName": "Example, Alex",
+      "employeeNumber": "900001",
+      "ncUid": "NCUID-TEST-001",
+      "gender": "Not specified",
+      "ethnicity": "Not specified",
+      "dateOfBirth": "1988-04-12",
+      "email": "alex.example@example.test",
+      "personalEmail": "alex.personal@example.test"
+    },
+    "contact": {
+      "address": "100 Example Street",
+      "city": "Testville",
+      "state": "NC",
+      "zip": "27000",
+      "phone": "555-0100"
+    },
+    "assignment": {
+      "organizationId": "school-001",
+      "organization": "Test Oak Elementary",
+      "classroom": "Room 101",
+      "months": 10,
+      "position": "Teacher",
+      "positionNumber": "1001",
+      "accountCode": "01.0000.000.000.0001",
+      "tapPercent": 100,
+      "payGrade": "Teacher",
+      "group": "Instructional Staff",
+      "mailStop": "TEST-01",
+      "schoolType": "Elementary",
+      "supervisor": "Sample, Morgan"
+    },
+    "compensation": {
+      "step": "5",
+      "proposedSalary": 58400,
+      "fixedSupplement": 0,
+      "offScale": 0,
+      "supplement": 0,
+      "tosState": 0,
+      "tosSupplement": 0,
+      "teacherDifferential": 0
+    },
+    "contract": {
+      "hireDate": "2018-08-15",
+      "continuousDate": "2018-08-15",
+      "lastChanged": "2026-07-01",
+      "type": "Regular",
+      "start": "2026-08-01",
+      "end": "2027-06-30",
+      "renewalYear": "2027",
+      "changeType": "Annual update",
+      "boardNumber": "TEST-BOARD-001"
+    },
+    "licensure": {
+      "type": "Regular",
+      "renewalYear": "2029-06-30",
+      "expires": "2029-06-30",
+      "areas": [{ "area": "00025", "description": "Elementary Grades K-6", "years": "05", "status": "04", "code": "TEST-LICENSE-001" }]
+    },
+    "service": { "yearsOfService": 8, "monthsOfService": 0, "lastUpdated": "2026-08-31" },
+    "leaveBalances": [
+      { "leaveType": "PTO Absence Bonus Annual", "carryover": 0, "accrued": 0, "used": 0, "adjustment": 0, "balance": 0, "accrualRate": 0, "lastUpdated": "2026-08-31" },
+      { "leaveType": "PTO Annual Leave", "carryover": 12, "accrued": 4.09, "used": 2, "adjustment": 0, "balance": 14.09, "accrualRate": 4.09, "lastUpdated": "2026-08-31" },
+      { "leaveType": "PTO Sick Leave", "carryover": 80, "accrued": 4.09, "used": 1, "adjustment": 0, "balance": 83.09, "accrualRate": 4.09, "lastUpdated": "2026-08-31" }
+    ]
+  }
+]

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "user-001",
+    "username": "hr.admin",
+    "wakeId": "hr.admin",
+    "employeeNumber": "900003",
+    "displayName": "Test HR Admin",
+    "email": "hr.admin@example.test",
+    "roles": ["hr_admin"],
+    "schoolIds": ["school-001", "school-002"],
+    "canViewAllSchools": true
+  },
+  {
+    "id": "user-002",
+    "username": "school.staff",
+    "wakeId": "school.staff",
+    "employeeNumber": "900001",
+    "displayName": "Test School Staff",
+    "email": "school.staff@example.test",
+    "roles": ["school_staff"],
+    "schoolIds": ["school-001"],
+    "canViewAllSchools": false
+  },
+  {
+    "id": "user-003",
+    "username": "principal.one",
+    "wakeId": "principal.one",
+    "employeeNumber": "900002",
+    "displayName": "Test Principal",
+    "email": "principal.one@example.test",
+    "roles": ["principal"],
+    "schoolIds": ["school-002"],
+    "canViewAllSchools": false
+  }
+]

@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HR Reporting — User Guide</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1f2933;
+    background: #f5f7fa;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 48px 28px 96px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+  }
+  h1 { font-size: 2.05rem; line-height: 1.2; margin: 0 0 8px; color: #102a43; }
+  h2 {
+    font-size: 1.5rem; margin: 2.2em 0 0.7em; padding-top: 0.5em;
+    border-top: 2px solid #e4e7eb; color: #102a43;
+  }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  h3 { font-size: 1.2rem; margin: 1.6em 0 0.6em; color: #243b53; }
+  p { margin: 0.6em 0; }
+  blockquote {
+    margin: 1.2em 0; padding: 0.2em 1.1em;
+    border-left: 4px solid #4f46e5; background: #f4f4ff; border-radius: 0 8px 8px 0;
+    color: #3730a3;
+  }
+  blockquote p { margin: 0.45em 0; }
+  ol, ul { padding-left: 1.4em; margin: 0.7em 0; }
+  li { margin: 0.35em 0; }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    background: #f0f2f5; padding: 0.15em 0.4em; border-radius: 4px; color: #c2410c;
+  }
+  strong { color: #0f172a; }
+  img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.1em auto 0.3em;
+    border: 1px solid #dfe3e8;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.10);
+  }
+  .img-render { text-align: center; }
+  .img-render img { display: inline-block; }
+  em { color: #475569; }
+  hr { border: none; border-top: 1px solid #e4e7eb; margin: 2em 0; }
+  a { color: #4f46e5; }
+  @media print {
+    body { background: #fff; }
+    .page { box-shadow: none; padding: 24px; max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>HR Reporting — User Guide</h1>
+<blockquote>
+<p><strong>Who this is for:</strong> A new HR administrator using HR Reporting for the first
+time.
+<strong>What this covers:</strong> The day-to-day tasks you&#39;ll perform — signing in,
+finding people, running and exporting reports, pinning positions, and the
+admin tasks of configuring reports and posting announcements.
+<strong>What this does not cover:</strong> The underlying design, data model, or SQL
+internals. This is a <em>how-to</em> document, not a design document.</p>
+<p>The guide uses the <strong>local test environment</strong> and signs in with the admin
+test account (see <a href="#chapter-1--getting-started">Chapter 1</a>). All the screens
+and data you see are synthetic fixture records — no real employee personal
+information is shown.</p>
+</blockquote>
+<hr>
+<h2>Table of Contents</h2>
+<ol>
+<li><a href="#chapter-1--getting-started">Getting Started</a></li>
+<li><a href="#chapter-2--locating--viewing-people">Locating &amp; Viewing People</a></li>
+<li><a href="#chapter-3--running--exporting-reports">Running &amp; Exporting Reports</a></li>
+<li><a href="#chapter-4--position-details--pins">Position Details &amp; Pins</a></li>
+<li><a href="#chapter-5--report-configuration-admin">Report Configuration (Admin)</a></li>
+<li><a href="#chapter-6--announcements--system-messages">Announcements &amp; System Messages</a></li>
+<li><a href="#chapter-7--personal-preferences">Personal Preferences</a></li>
+</ol>
+<hr>
+<h2>Chapter 1 — Getting Started</h2>
+<h3>1.1 Sign in</h3>
+<p><strong>Goal:</strong> Access the application with your administrator credentials.</p>
+<ol>
+<li>Open the app in your browser: <code>http://localhost:5173</code>.</li>
+<li>In the <strong>Wake ID</strong> field, enter your Wake ID.</li>
+<li>In the <strong>Employee ID</strong> field, enter your employee number.</li>
+<li><strong>Optional:</strong> Check <strong>Stay signed in on this device</strong> to skip the sign-in
+form on your next visit.</li>
+<li>Click <strong>Sign in</strong>.</li>
+</ol>
+<p><strong>Expected result:</strong> You land on the <strong>Home</strong> page (or whichever page you saved
+as your default home — see <a href="#chapter-7--personal-preferences">Chapter 7</a>). The
+topbar on the right shows <em>“Welcome, &lt;first name&gt; — &lt;position&gt;,
+&lt;school&gt;”</em>.</p>
+<p>For this guide, sign in with the admin test account: <strong>Wake ID <code>hr.admin</code></strong>,
+<strong>Employee ID <code>900003</code></strong>. This account has the <code>hr_admin</code> role, so it can see
+the <strong>Report Configuration</strong> navigation entry and the admin section of the
+Settings drawer.</p>
+<p><img src="./screenshots/login-screen.png" alt="The HR Reporting sign-in screen — Wake ID and Employee ID fields with a &quot;Stay signed in&quot; option and a Sign in button."></p>
+<blockquote>
+<p>💡 If you previously checked <strong>Stay signed in</strong>, the app signs you in
+automatically and skips this form. Click <strong>Sign out</strong> (top-right) to clear it.</p>
+</blockquote>
+<blockquote>
+<p>💡 Local testing uses synthetic fixture accounts. In production you&#39;ll sign in
+through the approved Wake identity provider instead.</p>
+</blockquote>
+<h3>1.2 Understand the layout</h3>
+<p><strong>Goal:</strong> Recognize the main regions of the app so you can navigate confidently.</p>
+<ol>
+<li><strong>Sidebar (left):</strong> The main navigation.<ul>
+<li><strong>Home</strong> — the people directory.</li>
+<li><strong>Reports</strong> — the report catalog.</li>
+<li><strong>Positions</strong> — your pinned positions (a badge shows the count).</li>
+<li><strong>Report Configuration</strong> — admin settings (visible only to admins).</li>
+</ul>
+</li>
+<li><strong>Topbar (right):</strong> Your welcome block, the <strong>Settings</strong> gear, the
+<strong>dark/light theme</strong> toggle, and <strong>Sign out</strong>.</li>
+<li><strong>Announcement banners:</strong> If an admin has posted an active banner, a strip
+appears just under the topbar. Click the <strong>✕</strong> on the banner to dismiss it.</li>
+</ol>
+<p><strong>Expected result:</strong> You can switch between Home, Reports, and Positions from
+the sidebar and reach your personal and admin settings from the topbar gear.</p>
+<hr>
+<h2>Chapter 2 — Locating &amp; Viewing People</h2>
+<h3>2.1 Search the directory</h3>
+<p><strong>Goal:</strong> Find a person by name, employee number, or organization.</p>
+<ol>
+<li>Go to <strong>Home</strong>.</li>
+<li>In the <strong>People lookup</strong> box, type a name, employee number, or organization.</li>
+<li><strong>Optional:</strong> Use the <strong>Filter by school</strong> dropdown to narrow to one school
+or department.</li>
+<li>Click <strong>Search</strong> (or press <strong>Enter</strong>).</li>
+</ol>
+<p><strong>Expected result:</strong> A results table appears with <strong>Person</strong>, <strong>Organization</strong>,
+<strong>Position</strong>, and <strong>Employee no.</strong> columns. The <strong>recently searched</strong> counter
+on the left tracks the people you&#39;ve opened.</p>
+<p><img src="./screenshots/home-directory.png" alt="The Home page with the People lookup directory, school filter, and a results table."></p>
+<h3>2.2 Open a full employee record</h3>
+<p><strong>Goal:</strong> View the complete employee report for a person.</p>
+<ol>
+<li>Click a row in the search results (or click the person&#39;s name).</li>
+<li>The <strong>Employee record</strong> drawer opens on the right.</li>
+</ol>
+<p><strong>Expected result:</strong> The drawer shows the employee&#39;s name, an <strong>Active</strong> status,
+and the record laid out as cards. Eight sections are available — <strong>Identity</strong>,
+<strong>Contact</strong>, <strong>Assignment</strong>, <strong>Compensation</strong>, <strong>Contract</strong>, <strong>Licensure</strong>,
+<strong>Service summary</strong>, and <strong>Leave balances</strong>. Each card&#39;s header has controls to
+hide, move, recolor, and reorder it.</p>
+<p><img src="./screenshots/employee-record.png" alt="The Employee record drawer open for a person, showing the Identity and Contact sections."></p>
+<h3>2.3 Customize the employee record layout</h3>
+<p><strong>Goal:</strong> Reorder, hide/show, and recolor the record sections to suit how you
+work.</p>
+<ol>
+<li>Open an employee record (see <a href="#22-open-a-full-employee-record">2.2</a>).</li>
+<li>Drag the <strong>⋮⋮</strong> handle on a section header to reorder the visible cards.</li>
+<li>Click the <strong>eye</strong> icon on a header to hide a section (it collapses into a
+hidden row with a <strong>Show section</strong> button).</li>
+<li>Click the <strong>palette</strong> icon to change a section&#39;s header color.</li>
+<li>Use the <strong>⬆ / ⬇</strong> buttons to move a section up or down.</li>
+<li>Click <strong>Save layout</strong> to persist your changes, or <strong>Reset to default</strong> /
+<strong>Show all sections</strong> to restore the default arrangement.</li>
+</ol>
+<p><strong>Expected result:</strong> Your layout is saved for your user account and reappears
+the next time you open an employee record.</p>
+<h3>2.4 Toggle monthly / yearly salary</h3>
+<p><strong>Goal:</strong> Switch the proposed salary display between monthly and yearly
+figures.</p>
+<ol>
+<li>In the <strong>Compensation</strong> section, find the <strong>Proposed salary</strong> field.</li>
+<li>Click it.</li>
+</ol>
+<p><strong>Expected result:</strong> The value toggles between the monthly figure and the
+yearly figure (yearly = monthly × 12).</p>
+<hr>
+<h2>Chapter 3 — Running &amp; Exporting Reports</h2>
+<h3>3.1 Open the report catalog</h3>
+<p><strong>Goal:</strong> Browse the available HR reports.</p>
+<ol>
+<li>Click <strong>Reports</strong> in the sidebar.</li>
+</ol>
+<p><strong>Expected result:</strong> The <strong>Report center</strong> opens with the heading
+“Choose a report.” Reports are grouped into <strong>sections</strong> (for example,
+<strong>Person</strong>, <strong>Certification and evaluation</strong>, <strong>Staffing and contracts</strong>), each
+with an options count. The top shows a <strong>school picker</strong> and a <strong>Filter
+reports</strong> box, plus a <strong>Recently run</strong> strip.</p>
+<p><img src="./screenshots/reports-catalog.png" alt="The Reports catalog with the school picker, filter box, Recently run strip, and report sections."></p>
+<h3>3.2 Pick a school</h3>
+<p><strong>Goal:</strong> Scope report output to one school or department.</p>
+<ol>
+<li>Click the <strong>school combobox</strong> at the top of the Reports page.</li>
+<li>Select a school or department (for example, <strong>Test Oak Elementary</strong>).</li>
+</ol>
+<p><strong>Expected result:</strong> The school is remembered for you and used as the scope
+for reports you run.</p>
+<h3>3.3 Run a report</h3>
+<p><strong>Goal:</strong> View report rows.</p>
+<ol>
+<li>Click a report option (for example, <strong>Staff Planning Report</strong>).</li>
+<li>A results table loads for the selected school.</li>
+</ol>
+<p><strong>Expected result:</strong> A data table appears with an <strong>Export to Excel</strong>, <strong>Export
+to CSV</strong>, and <strong>Export to PDF</strong> button in the toolbar, a <strong>Filter rows</strong> box, a
+<strong>Columns</strong> chooser, a row count (“X of Y rows”), and sortable column headers.</p>
+<p><img src="./screenshots/report-run.png" alt="A running report showing the toolbar with export buttons, a Filter rows box, the Columns picker, and the results table."></p>
+<blockquote>
+<p>🔒 Reports marked <strong>Inactive</strong> in Report Configuration are greyed out with an
+“Inactive” badge and cannot be opened (see <a href="#chapter-5--report-configuration-admin">Chapter 5</a>).</p>
+</blockquote>
+<h3>3.4 Filter, sort, and manage columns</h3>
+<p><strong>Goal:</strong> Manipulate the result grid.</p>
+<ol>
+<li><strong>Filter rows:</strong> Type in the <strong>Filter rows</strong> box to match across the visible
+columns.</li>
+<li><strong>Sort:</strong> Click a column header to toggle ascending → descending → none.</li>
+<li><strong>Columns:</strong> Click <strong>Columns</strong> → check or uncheck to show/hide, or move
+<strong>⬆ / ⬇</strong> to reorder the visible columns.</li>
+</ol>
+<p><strong>Expected result:</strong> The displayed rows and the column count update
+immediately. Any active row filter is also applied to exports.</p>
+<h3>3.5 Filter by a highlight rule</h3>
+<p><strong>Goal:</strong> Narrow rows to those matching an admin-configured highlight rule.</p>
+<ol>
+<li>If any highlight rules are configured for the report, click a <strong>highlight
+chip</strong> to filter to the matching rows; click the chip again to clear the
+filter.</li>
+</ol>
+<p><strong>Expected result:</strong> Only the matching rows remain, tinted with the rule&#39;s
+color (rules are configured in <a href="#chapter-5--report-configuration-admin">Chapter 5</a>).</p>
+<h3>3.6 Export to Excel / CSV / PDF</h3>
+<p><strong>Goal:</strong> Download the current grid.</p>
+<ol>
+<li>Use the <strong>Excel</strong>, <strong>CSV</strong>, or <strong>PDF</strong> button in the report toolbar.</li>
+</ol>
+<p><strong>Expected result:</strong> A file downloads named
+<code>&lt;report-title&gt;-&lt;school&gt;.xlsx</code> / <code>.csv</code> / <code>.pdf</code>.</p>
+<ul>
+<li><strong>Excel</strong> honors row-highlight fills; if the report has a subreport it
+appears as a second <strong>Subreport</strong> sheet; any <strong>Additional columns</strong> are
+appended at the end.</li>
+<li><strong>CSV</strong> is UTF-8; a subreport is appended after a blank spacer row.</li>
+<li><strong>PDF</strong> uses a styled header and footer, orients landscape when there are
+more than 5 columns, and adds page footers.</li>
+</ul>
+<h3>3.7 Re-open a recent run</h3>
+<p><strong>Goal:</strong> Quickly reload a report you ran earlier.</p>
+<ol>
+<li>On the Reports catalog, click a chip under <strong>Recently run</strong>.</li>
+</ol>
+<p><strong>Expected result:</strong> The report reopens with the same school selected.</p>
+<hr>
+<h2>Chapter 4 — Position Details &amp; Pins</h2>
+<h3>4.1 Open position details</h3>
+<p><strong>Goal:</strong> Inspect a position.</p>
+<ol>
+<li>Click a position link — either a <strong>position number</strong> in a report cell or a
+position number on the <strong>Positions</strong> page.</li>
+</ol>
+<p><strong>Expected result:</strong> A read-only <strong>Position details</strong> drawer opens with the
+<strong>General</strong> tab (position number, account, organization, dates, administrator,
+region, and more) and a <strong>Notes</strong> tab, plus an <strong>Incumbent</strong> section with
+<strong>Current</strong> and <strong>Future</strong> tabs.</p>
+<h3>4.2 Pin / unpin a position</h3>
+<p><strong>Goal:</strong> Keep a position on the <strong>Positions</strong> page for quick access.</p>
+<ol>
+<li>In the <strong>Position details</strong> drawer, click the <strong>pin</strong> icon (top-right).</li>
+</ol>
+<p><strong>Expected result:</strong> The icon becomes filled and the position appears on the
+<strong>Positions</strong> page. The sidebar <strong>Positions</strong> badge updates to the new count.</p>
+<h3>4.3 Manage pinned positions</h3>
+<p><strong>Goal:</strong> Find, open, or remove pinned positions.</p>
+<ol>
+<li>Click <strong>Positions</strong> in the sidebar.</li>
+<li>Search by position number, title, or incumbent, or filter by organization.</li>
+<li>Click a position number to reopen its details; click the <strong>🗑</strong> icon to
+remove it from your pinned list.</li>
+</ol>
+<p><strong>Expected result:</strong> The pinned list updates and the count badge refreshes.</p>
+<p><img src="./screenshots/positions-list.png" alt="The Positions page showing the &quot;Your pinned positions&quot; list with a search box and organization filter."></p>
+<h3>4.4 Add a note to a position</h3>
+<p><strong>Goal:</strong> Attach a comment to a position for collaborators.</p>
+<ol>
+<li>Open the <strong>Position details</strong> drawer (see <a href="#41-open-position-details">4.1</a>).</li>
+<li>Click the <strong>Notes</strong> tab.</li>
+<li>Type your note and submit it.</li>
+</ol>
+<p><strong>Expected result:</strong> The note appears and a badge count shows on the Notes tab.</p>
+<p><img src="./screenshots/position-details.png" alt="The Position details drawer for a position, showing the General tab with account, organization, and incumbent details."></p>
+<hr>
+<h2>Chapter 5 — Report Configuration (Admin)</h2>
+<blockquote>
+<p><strong>Only admins can do this.</strong> The Report Configuration navigation entry is
+visible only to users with the <code>hr_admin</code> role. Sign in as the admin account
+(<code>hr.admin</code> / <code>900003</code>) to access it.</p>
+</blockquote>
+<h3>5.1 Organize report sections</h3>
+<p><strong>Goal:</strong> Group reports into catalog sections.</p>
+<ol>
+<li>Open <strong>Report Configuration</strong> in the sidebar.</li>
+<li>Click the <strong>Sections</strong> tab.</li>
+<li>Enter a <strong>New section title</strong> and click <strong>Add section</strong>.</li>
+<li><strong>Rename</strong> or <strong>Archive</strong> an existing section as needed.</li>
+</ol>
+<p><strong>Expected result:</strong> Sections appear on the Reports catalog. Archived sections
+are hidden until reactivated.</p>
+<h3>5.2 Author a report</h3>
+<p><strong>Goal:</strong> Create an admin-authored report backed by SQL.</p>
+<ol>
+<li>Open <strong>Report Configuration</strong> → <strong>Reports</strong> tab → <strong>New report</strong>.</li>
+<li>Fill in the <strong>General</strong> tab:<ul>
+<li><strong>Title</strong> and an optional <strong>Description</strong>.</li>
+<li><strong>Section</strong> — the catalog group this report belongs to.</li>
+<li><strong>Status</strong> — keep it <strong>Inactive</strong> until you&#39;ve validated it.</li>
+<li><strong>SQL query</strong> — a single, read-only <code>SELECT</code> (or <code>WITH</code>) statement that
+must reference the <code>:organization</code> bind parameter.</li>
+<li><strong>Display columns</strong> — a comma-separated list (optional; leave blank to use
+the query&#39;s columns).</li>
+</ul>
+</li>
+<li>Click <strong>Validate</strong>. On success a <strong>Valid</strong> badge appears; errors show
+inline (for example, a forbidden keyword, a multi-statement query, or a
+missing <code>:organization</code>).</li>
+<li>Click <strong>Preview</strong> to run against a chosen school and see the first rows
+(with any rule tinting applied).</li>
+<li>Set <strong>Status</strong> to <strong>Active</strong>, then click <strong>Save report</strong>.</li>
+</ol>
+<p><strong>Expected result:</strong> The report appears in the catalog as active and can be
+run by users.</p>
+<p><img src="./screenshots/settings-report-editor.png" alt="The Edit report dialog with the General tab — Title, Description, Section, Status, SQL query, and Display columns."></p>
+<h3>5.3 Build row-highlighting rules</h3>
+<p><strong>Goal:</strong> Tint matching rows automatically so important rows stand out.</p>
+<ol>
+<li>In the report editor, open the <strong>Rules</strong> tab.</li>
+<li>Click <strong>Add rule</strong> and choose <strong>Match any (OR)</strong> or <strong>Match all (AND)</strong>.</li>
+<li>Add conditions (<strong>WHEN</strong> column operator value). Operators include
+<code>equals</code>, <code>not equals</code>, <code>contains</code>, <code>does not contain</code>, <code>is empty</code>, and
+<code>is not empty</code>. You can use <code>THISYEAR</code> / <code>NEXTYEAR</code> for the current or next
+year.</li>
+<li>Choose a <strong>color</strong> from the pastel palette.</li>
+<li>Drag the <strong>⋮⋮</strong> handle to set rule priority (<strong>first match wins</strong>). Up to
+10 rules are allowed, with up to 5 conditions each.</li>
+<li><strong>Save report.</strong> Rules apply to the on-screen rows and are carried into
+Excel and PDF exports.</li>
+</ol>
+<h3>5.4 Configure export options</h3>
+<p><strong>Goal:</strong> Add blank output columns and/or a subreport.</p>
+<ol>
+<li>In the report editor, open the <strong>Options</strong> tab.</li>
+<li><strong>Additional Columns</strong> — enter comma-delimited names to append to the end
+of the Excel export.</li>
+<li><strong>Subreport</strong> — a read-only child <code>SELECT</code> that must reference
+<code>:person_id</code>. Set a <strong>Subreport key column</strong> (defaults to <code>person_id</code>).
+Leave the SQL blank to disable. Nested rows appear in the preview, in the
+Excel <strong>Subreport</strong> sheet, and in the PDF block.</li>
+<li><strong>Save report.</strong></li>
+</ol>
+<h3>5.5 Activate / archive a report</h3>
+<p><strong>Goal:</strong> Control whether a report is visible and runnable.</p>
+<ol>
+<li>In the <strong>Reports</strong> tab, click <strong>Edit</strong> on a report and set <strong>Status</strong> to
+<strong>Active</strong>.</li>
+<li>Or click <strong>Archive</strong> to set it to <strong>Inactive</strong> and hide it from the catalog.</li>
+</ol>
+<p><strong>Expected result:</strong> Active reports open; inactive reports are greyed out with
+an “Inactive” badge.</p>
+<p><img src="./screenshots/settings-reports-list.png" alt="The Report Configuration Reports tab listing Certification Report and Contract Report with Edit and Archive actions."></p>
+<hr>
+<h2>Chapter 6 — Announcements &amp; System Messages</h2>
+<blockquote>
+<p><strong>Only admins can do this.</strong> Announcements are managed under the <strong>Settings
+gear</strong>, not the Report Configuration page.</p>
+</blockquote>
+<h3>6.1 Create a banner</h3>
+<p><strong>Goal:</strong> Show a slim, dismissible announcement strip.</p>
+<ol>
+<li>Click the <strong>gear</strong> icon in the topbar → the <strong>Settings</strong> drawer opens.</li>
+<li>Under <strong>System-wide messages</strong>, set the type to <strong>Banner</strong>.</li>
+<li>Enter an optional <strong>Title</strong>, a <strong>Message</strong>, and check <strong>Active</strong>.</li>
+<li>Click <strong>Add message</strong>.</li>
+</ol>
+<p><strong>Expected result:</strong> A banner appears on every page and users can dismiss it.
+Up to 3 active banners can be shown at once.</p>
+<h3>6.2 Create a splash</h3>
+<p><strong>Goal:</strong> Show a full-screen, one-time announcement at sign-in.</p>
+<ol>
+<li>Set the type to <strong>Splash</strong>, add a <strong>Title</strong> and <strong>Message</strong>, set
+<strong>Active</strong>, and click <strong>Add message</strong>.</li>
+</ol>
+<p><strong>Expected result:</strong> On the next sign-in, a full-screen overlay appears once;
+clicking <strong>Got it</strong> dismisses it.</p>
+<h3>6.3 Edit / activate / delete a message</h3>
+<p><strong>Goal:</strong> Manage existing announcements.</p>
+<ol>
+<li>Use the <strong>✎</strong> icon to edit, the <strong>● / ◌</strong> icon to toggle active/inactive,
+and the <strong>🗑</strong> icon to delete.</li>
+</ol>
+<p><strong>Expected result:</strong> The message list reflects your changes. Active banners
+re-surface after an edit even if they were previously dismissed.</p>
+<p><img src="./screenshots/settings-messages.png" alt="The Settings drawer showing the System-wide messages form with a Banner type, message fields, and an existing message with Edit, Deactivate, and Delete actions."></p>
+<hr>
+<h2>Chapter 7 — Personal Preferences</h2>
+<h3>7.1 Set the default landing page</h3>
+<p><strong>Goal:</strong> Choose where you land after signing in.</p>
+<ol>
+<li>Click the <strong>gear</strong> icon in the topbar → the <strong>Settings</strong> drawer opens.</li>
+<li>Under <strong>Default home page</strong>, choose <strong>Home</strong>, <strong>Reports</strong>, or <strong>Positions</strong>.</li>
+</ol>
+<p><strong>Expected result:</strong> Your next sign-in lands on the page you selected. This is
+saved per user.</p>
+<p><img src="./screenshots/settings-preferences.png" alt="The Settings drawer showing the Default home page picker with Home, Reports, and Positions options."></p>
+<h3>7.2 Toggle dark mode</h3>
+<p><strong>Goal:</strong> Switch the app between the light and dark theme.</p>
+<ol>
+<li>Click the <strong>moon / sun</strong> icon in the topbar.</li>
+</ol>
+<p><strong>Expected result:</strong> The whole app re-themes and your choice persists across
+sessions.</p>
+<hr>
+<h2>Appendix — Local test accounts</h2>
+<p>The local environment ships with synthetic fixture accounts you can use to see
+role-based differences. The main guide uses the admin account.</p>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Wake ID</th>
+<th>Employee ID</th>
+<th>What you can see</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>hr_admin</code></td>
+<td><code>hr.admin</code></td>
+<td><code>900003</code></td>
+<td>Full admin — sees <strong>Report Configuration</strong> and the admin settings</td>
+</tr>
+<tr>
+<td><code>school_staff</code></td>
+<td><code>school.staff</code></td>
+<td><code>900001</code></td>
+<td>Standard staff — no admin navigation</td>
+</tr>
+<tr>
+<td><code>principal</code></td>
+<td><code>principal.one</code></td>
+<td><code>900002</code></td>
+<td>Restricted school access</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>⚠️ Never capture real employee personal data (SSN, date of birth, contact
+details, salary, license numbers) in screenshots. The data shown in this
+guide is purely synthetic fixture data.</p>
+</blockquote>
+
+</div>
+</body>
+</html>

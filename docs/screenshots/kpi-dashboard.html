@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KPI Dashboard — HR Reporting (Mock)</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root { font-family: 'Space Grotesk', 'Trebuchet MS', sans-serif; color:#26231f; background:#f5f1e8; }
+*{box-sizing:border-box} body{margin:0; background:#f5f1e8}
+a{color:inherit}
+.app-shell{min-height:100vh; background: radial-gradient(circle at 75% 8%, rgba(232,181,91,.22), transparent 27rem), #f5f1e8;}
+.topbar{min-height:78px; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:18px clamp(20px,5vw,72px); border-bottom:1px solid #d9d0c1; background:rgba(250,247,240,.82); backdrop-filter: blur(6px); position:sticky; top:0; z-index:10}
+.brand-lockup{display:flex; align-items:center; gap:12px}
+.brand-mark{display:grid; place-items:center; width:38px; height:38px; color:#f8f4ea; background:#2e5e56; border-radius:10px; font-weight:700}
+.eyebrow{margin:0 0 4px; color:#8b6b3e; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase}
+.topbar h1{margin:0; font-size:17px}
+.topbar-meta{display:flex; align-items:center; gap:10px; color:#756f66; font-size:13px}
+.pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #d9d0c1; border-radius:999px; background:#fffdf8; font-size:12px}
+.dot{width:8px; height:8px; border-radius:50%; background:#4e8f68; box-shadow:0 0 0 4px rgba(78,143,104,.13)}
+.icon-btn{display:grid; place-items:center; width:36px; height:36px; border:1px solid #d9d0c1; border-radius:8px; background:#fbf8f1; cursor:pointer}
+.hero{padding: clamp(28px,5vw,48px) clamp(20px,5vw,72px) 24px; border-bottom:1px solid #d9d0c1; display:flex; justify-content:space-between; align-items:end; gap:24px; flex-wrap:wrap}
+.hero h2{margin:0 0 10px; font-size: clamp(28px,4vw,44px); line-height:.98; letter-spacing:-.03em}
+.hero p{margin:0; max-width:620px; color:#756f66; line-height:1.5}
+.hero-actions{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+.select{ display:flex; align-items:center; gap:8px; height:42px; padding:0 12px; border:1px solid #d2c7b7; border-radius:8px; background:#fffdf8; color:#514a41; font-size:13px}
+.select select{border:0; background:transparent; outline:0; color:#26231f; font:inherit}
+.btn{ display:inline-flex; align-items:center; gap:8px; height:42px; padding:0 16px; border-radius:8px; border:1px solid #d9d0c1; background:#fffdf8; font-weight:600; cursor:pointer}
+.btn-primary{ background:#2e5e56; color:#fffaf0; border-color:#2e5e56}
+.btn-primary:hover{ background:#234b45}
+.wrap{max-width:1600px; margin:0 auto; padding: 28px clamp(20px,5vw,72px) 64px}
+.kpi-grid{display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:16px; margin-bottom:22px}
+@media(max-width:1100px){ .kpi-grid{grid-template-columns: repeat(2,1fr)}}
+@media(max-width:640px){ .kpi-grid{grid-template-columns:1fr}}
+.kpi{ position:relative; border:1px solid #d9d0c1; background: rgba(255,252,246,.9); border-radius:12px; padding:18px; overflow:hidden; display:flex; flex-direction:column; gap:14px; transition: transform .15s, box-shadow .15s, border-color .15s}
+.kpi:hover{ transform: translateY(-2px); box-shadow: 0 10px 28px rgba(38,35,31,.08); border-color:#c9bdaa}
+.kpi-head{display:flex; align-items:center; gap:10px}
+.kpi-icon{width:36px; height:36px; border-radius:9px; display:grid; place-items:center; background:#edf3ee; color:#2e5e56; border:1px solid #cfe0d6; flex:0 0 auto}
+.kpi-title{flex:1; min-width:0}
+.kpi-title strong{display:block; font-size:13px; letter-spacing:.02em}
+.kpi-title span{display:block; font-size:11px; color:#8c857a; letter-spacing:.06em; text-transform:uppercase}
+.badge{font-size:11px; font-weight:700; padding:5px 8px; border-radius:999px; border:1px solid transparent; white-space:nowrap}
+.badge-up{ background:#e6f4ea; color:#2a6b3a; border-color:#c3e2c9}
+.badge-warn{ background:#fff3c4; color:#7a5a00; border-color:#f0d98a}
+.badge-danger{ background:#faece7; color:#8e3f31; border-color:#e8c9bf}
+.badge-neutral{ background:#f0ebe1; color:#665f56; border-color:#d9d0c1}
+.kpi-value{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.kpi-value b{font-size:34px; line-height:1; letter-spacing:-.03em}
+.kpi-value small{color:#756f66; font-size:12px}
+.kpi-sub{color:#665f56; font-size:13px; line-height:1.4; min-height:18px}
+.mini-bars{display:flex; align-items:end; gap:4px; height:36px; margin-top:2px}
+.mini-bars i{display:block; flex:1; border-radius:4px 4px 0 0; background:#d9d0c1}
+.mini-bars i.active{ background:#2e5e56}
+.progress{height:8px; border-radius:999px; background:#ece6db; overflow:hidden; display:flex}
+.progress span{display:block; height:100%; border-radius:999px}
+.kpi-foot{display:flex; align-items:center; justify-content:space-between; gap:10px; padding-top:12px; border-top:1px solid #ece6db; margin-top:auto}
+.kpi-foot a{font-size:12px; font-weight:700; color:#2e5e56; text-decoration:none}
+.kpi-foot a:hover{text-decoration:underline}
+.kpi-foot .meta{font-size:11px; color:#8c857a}
+.kpi.accent{ border-top:3px solid #2e5e56}
+.kpi.accent-warn{ border-top:3px solid #d8b16e}
+.kpi.accent-danger{ border-top:3px solid #c97a5a}
+.detail-grid{display:grid; grid-template-columns: 1.35fr .85fr; gap:16px}
+@media(max-width:1000px){ .detail-grid{grid-template-columns:1fr}}
+.card{border:1px solid #d9d0c1; background: rgba(255,252,246,.9); border-radius:12px; padding:18px}
+.card h3{margin:0 0 4px; font-size:15px}
+.card p{margin:0 0 14px; color:#756f66; font-size:13px; line-height:1.5}
+.bar-list{display:grid; gap:10px}
+.bar-row{display:grid; grid-template-columns: 1fr auto; gap:10px; align-items:center; font-size:13px}
+.bar-row span:first-child{color:#514a41; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar-track{grid-column:1 / -1; height:8px; border-radius:999px; background:#ece6db; overflow:hidden}
+.bar-fill{height:100%; border-radius:999px; background:#2e5e56}
+.timeline{display:grid; gap:10px}
+.tl-row{display:flex; align-items:center; gap:10px; font-size:13px}
+.tl-dot{width:10px; height:10px; border-radius:50%; flex:0 0 auto}
+.tl-label{flex:1; color:#514a41}
+.tl-count{font-weight:700; font-variant-numeric: tabular-nums}
+.foot-note{margin-top:18px; padding:14px 16px; border:1px dashed #d9d0c1; border-radius:10px; background:#fffdf8; color:#756f66; font-size:12px; line-height:1.6; display:flex; gap:10px; align-items:start}
+.mono{font-family:'DM Mono', monospace}
+@media(max-width:680px){ .hero{padding-top:22px} .topbar{padding:14px 16px} .wrap{padding:18px 16px 48px} .kpi-value b{font-size:28px}}
+/* dark */
+[data-theme="dark"]{color:#e8e2d7; background:#14110d}
+[data-theme="dark"] body{background:#14110d}
+[data-theme="dark"] .app-shell{background: radial-gradient(circle at 75% 8%, rgba(232,181,91,.08), transparent 27rem), #14110d}
+[data-theme="dark"] .topbar{border-bottom:1px solid #3a332a; background:rgba(28,24,19,.82)}
+[data-theme="dark"] .pill{border-color:#3a332a; background:#241f19; color:#c9c2b5}
+[data-theme="dark"] .select, [data-theme="dark"] .btn{border-color:#3a332a; background:#241f19; color:#e8e2d7}
+[data-theme="dark"] .select select{color:#e8e2d7}
+[data-theme="dark"] .btn-primary{background:#6fbfa8; color:#14110d; border-color:#6fbfa8}
+[data-theme="dark"] .hero{border-bottom-color:#3a332a}
+[data-theme="dark"] .hero p, [data-theme="dark"] .card p{color:#a89f91}
+[data-theme="dark"] .kpi, [data-theme="dark"] .card{border-color:#3a332a; background:rgba(28,24,19,.9)}
+[data-theme="dark"] .kpi-icon{background:#24332e; color:#7ecbb5; border-color:#3a332a}
+[data-theme="dark"] .kpi-sub{color:#a89f91}
+[data-theme="dark"] .mini-bars i{background:#3a332a}
+[data-theme="dark"] .mini-bars i.active{background:#6fbfa8}
+[data-theme="dark"] .progress, [data-theme="dark"] .bar-track{background:#2c271f}
+[data-theme="dark"] .kpi-foot{border-top-color:#2c271f}
+[data-theme="dark"] .kpi-foot a{color:#7ecbb5}
+[data-theme="dark"] .foot-note{border-color:#3a332a; background:#1c1813; color:#a89f91}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand-lockup">
+      <div class="brand-mark">HR</div>
+      <div>
+        <p class="eyebrow">Wake County Public Schools</p>
+        <h1>HR Reporting</h1>
+      </div>
+    </div>
+    <div class="topbar-meta">
+      <span class="pill"><span class="dot"></span> Live — Turso</span>
+      <span class="pill mono">Test Oak Elementary ▾</span>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Stretch feature — P3 · KPI Dashboard</p>
+      <h2>At-a-glance tiles</h2>
+      <p>Faster triage without running a report. Each tile is a live, <span class="mono">:organization</span>-scoped report — same safe SQL runner, row cap 1. Click any tile to open the full report.</p>
+    </div>
+    <div class="hero-actions">
+      <label class="select">Organization
+        <select><option>Test Oak Elementary (0302)</option><option>Test Maple Middle (0340)</option><option>Test River High (0501)</option><option>All — Admin only</option></select>
+      </label>
+      <button class="btn">Export snapshot</button>
+      <button class="btn btn-primary">View all reports →</button>
+    </div>
+  </section>
+
+  <main class="wrap">
+    <!-- KPI GRID -->
+    <div class="kpi-grid">
+
+      <!-- Headcount -->
+      <article class="kpi accent">
+        <div class="kpi-head">
+          <div class="kpi-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div class="kpi-title"><strong>Headcount</strong><span>Active employees</span></div>
+          <span class="badge badge-up">▲ +12 mo</span>
+        </div>
+        <div class="kpi-value"><b>1,247</b><small>· 45 in Test Oak</small></div>
+        <div class="kpi-sub">1,203 full-time · 44 part-time · 0 on leave</div>
+        <div class="mini-bars" aria-hidden="true">
+          <i style="height:42%"></i><i style="height:58%"></i><i style="height:48%"></i><i style="height:72%"></i><i style="height:66%"></i><i class="active" style="height:88%"></i><i style="height:76%"></i>
+        </div>
+        <div class="kpi-foot"><a href="#">View People directory →</a><span class="meta mono">updated today 7:04a</span></div>
+      </article>
+
+      <!-- Vacancies -->
+      <article class="kpi accent-warn">
+        <div class="kpi-head">
+          <div class="kpi-icon" style="background:#fff7d6; border-color:#f0d98a; color:#7a5a00">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+          </div>
+          <div class="kpi-title"><strong>Vacancies</strong><span>Open positions</span></div>
+          <span class="badge badge-warn">12 &gt;30d</span>
+        </div>
+        <div class="kpi-value"><b>38</b><small>open</small></div>
+        <div class="kpi-sub">26 posted · 12 unfilled &gt;30 days · 5 critical</div>
+        <div class="progress" aria-label="fill rate"><span style="width:68%; background:#d8b16e"></span><span style="width:32%; background:#ece6db"></span></div>
+        <div class="kpi-foot"><a href="#">Open Positions report →</a><span class="meta">68% filled</span></div>
+      </article>
+
+      <!-- Expiring Certs -->
+      <article class="kpi accent-danger">
+        <div class="kpi-head">
+          <div class="kpi-icon" style="background:#faece7; border-color:#e8c9bf; color:#8e3f31">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="6"/><path d="M15.5 8.5 12 12l-2-2"/><path d="M8 14a4 4 0 0 0 8 0"/></svg>
+          </div>
+          <div class="kpi-title"><strong>Expiring certs</strong><span>Next 90 days</span></div>
+          <span class="badge badge-danger">8 in 30d</span>
+        </div>
+        <div class="kpi-value"><b>24</b><small>expiring</small></div>
+        <div class="kpi-sub">8 in 30d · 9 in 60d · 7 in 90d</div>
+        <div class="progress"><span style="width:33%; background:#c97a5a"></span><span style="width:37%; background:#e8b5a3"></span><span style="width:30%; background:#f0d9d0"></span></div>
+        <div class="kpi-foot"><a href="#">Certification report →</a><span class="meta">tap to filter 30d</span></div>
+      </article>
+
+      <!-- Contracts ending -->
+      <article class="kpi">
+        <div class="kpi-head">
+          <div class="kpi-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <div class="kpi-title"><strong>Contracts ending</strong><span>Current year</span></div>
+          <span class="badge badge-neutral mono">THISYEAR</span>
+        </div>
+        <div class="kpi-value"><b>17</b><small>in 2026</small></div>
+        <div class="kpi-sub">5 Terminating · 6 No Contract · 6 One/Two-Year</div>
+        <div class="mini-bars"><i style="height:30%"></i><i style="height:55%"></i><i class="active" style="height:82%"></i><i style="height:48%"></i><i style="height:62%"></i><i style="height:40%"></i></div>
+        <div class="kpi-foot"><a href="#">Contract Report →</a><span class="meta">row tint: Terminating</span></div>
+      </article>
+
+      <!-- Leave liability -->
+      <article class="kpi">
+        <div class="kpi-head">
+          <div class="kpi-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <div class="kpi-title"><strong>Leave liability</strong><span>Pending days</span></div>
+          <span class="badge badge-neutral">412 days</span>
+        </div>
+        <div class="kpi-value"><b>412</b><small>days</small></div>
+        <div class="kpi-sub">Sick 248 · Annual 112 · Personal 52</div>
+        <div class="progress"><span style="width:60%; background:#2e5e56"></span><span style="width:27%; background:#8fb8a8"></span><span style="width:13%; background:#d9d0c1"></span></div>
+        <div class="kpi-foot"><a href="#">Leave report →</a><span class="meta">avg 9.1 / person</span></div>
+      </article>
+
+      <!-- Future assignments -->
+      <article class="kpi">
+        <div class="kpi-head">
+          <div class="kpi-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          </div>
+          <div class="kpi-title"><strong>Future assignments</strong><span>Next 30 days</span></div>
+          <span class="badge badge-up">+5</span>
+        </div>
+        <div class="kpi-value"><b>5</b><small>starting</small></div>
+        <div class="kpi-sub">3 teachers · 1 counselor · 1 ESL · all 3180xxx</div>
+        <div class="mini-bars"><i style="height:28%"></i><i style="height:36%"></i><i style="height:44%"></i><i class="active" style="height:68%"></i></div>
+        <div class="kpi-foot"><a href="#">Future Assignments →</a><span class="meta">next: Sep 12</span></div>
+      </article>
+
+    </div>
+
+    <!-- Detail row -->
+    <div class="detail-grid">
+      <section class="card">
+        <h3>Vacancies by school</h3>
+        <p>Top schools by open positions — same <span class="mono">:organization</span> bind, capped at 2000 rows.</p>
+        <div class="bar-list">
+          <div class="bar-row"><span>Test Oak Elementary (0302)</span><strong>14</strong></div>
+          <div class="bar-track"><div class="bar-fill" style="width:70%"></div></div>
+          <div class="bar-row"><span>Test River High (0501)</span><strong>11</strong></div>
+          <div class="bar-track"><div class="bar-fill" style="width:55%; background:#8fb8a8"></div></div>
+          <div class="bar-row"><span>Test Maple Middle (0340)</span><strong>8</strong></div>
+          <div class="bar-track"><div class="bar-fill" style="width:40%; background:#c9bdaa"></div></div>
+          <div class="bar-row"><span>Test Cedar Elementary (0455)</span><strong>5</strong></div>
+          <div class="bar-track"><div class="bar-fill" style="width:25%; background:#d9d0c1"></div></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Certs expiring — timeline</h3>
+        <p>Click a bucket to filter the Certification report.</p>
+        <div class="timeline">
+          <div class="tl-row"><span class="tl-dot" style="background:#c97a5a"></span><span class="tl-label">0–30 days</span><span class="tl-count">8</span></div>
+          <div class="progress"><span style="width:33%; background:#c97a5a"></span></div>
+          <div class="tl-row"><span class="tl-dot" style="background:#d8b16e"></span><span class="tl-label">31–60 days</span><span class="tl-count">9</span></div>
+          <div class="progress"><span style="width:37%; background:#d8b16e"></span></div>
+          <div class="tl-row"><span class="tl-dot" style="background:#8fb8a8"></span><span class="tl-label">61–90 days</span><span class="tl-count">7</span></div>
+          <div class="progress"><span style="width:29%; background:#8fb8a8"></span></div>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+          <span class="badge badge-danger">Pastel red = urgent</span>
+          <span class="badge badge-warn">Pastel yellow = soon</span>
+        </div>
+      </section>
+    </div>
+
+    <div class="foot-note">
+      <span style="font-size:16px">💡</span>
+      <div>
+        <strong>How it works (no new infra):</strong> each tile is a named report with <span class="mono">kind='kpi'</span> and a single-row <span class="mono">SELECT COUNT(*) … WHERE organization = :organization</span>. Reuses the existing safe-SQL runner, RBAC scope, and row-highlight palette. Tiles live on <span class="mono">Home</span> above the directory when a session exists; each tile links to its full report. Dark theme, mobile cards (680px), and Excel/PDF export are inherited.
+        <br><span class="mono" style="color:#8b6b3e">GET /api/reports/:id/run?organization=Test%20Oak%20Elementary</span> → <span class="mono">{ columns, rows: [{ headcount: 45 }] }</span>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+const btn=document.getElementById('themeBtn');
+btn.addEventListener('click',()=>{
+  const cur=document.documentElement.getAttribute('data-theme');
+  const next=cur==='dark' ? '' : 'dark';
+  if(next) document.documentElement.setAttribute('data-theme','dark'); else document.documentElement.removeAttribute('data-theme');
+});
+</script>
+</body>
+</html>
