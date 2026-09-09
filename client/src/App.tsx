@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, GripVertical, Home, LogOut, Menu, MessageSquare, Moon, Palette, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, UserPlus, Users, X } from 'lucide-react';
-import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getSystemMessages, login } from './api';
+import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, GripVertical, Home, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getSystemMessages, login, sendNowFuturePosition, updateFuturePosition } from './api';
 import type { FuturePosition, FuturePositionStatus, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
 import { FuturePositionsPage } from './FuturePositionsPage';
@@ -17,6 +17,18 @@ import type { HomePage } from './homePage';
 import { addRecentPerson, loadRecentPeople } from './recentPeople';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+// Normalize a stored date value (mysql2 may return a JS Date, or a
+// "YYYY-MM-DD HH:MM:SS" / full GMT string) into "YYYY-MM-DD" for the
+// <input type="date"> fields in the Future Positions form.
+function toDateInput(value: string | null | undefined): string {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+}
 
 function RecordField({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return <div className="record-field"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value || 'Not provided'}</strong></div>;
@@ -350,7 +362,12 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
   const [futureNotice, setFutureNotice] = useState('');
   const [toast, setToast] = useState('');
   const [futureForm, setFutureForm] = useState<{ incumbentName: string; employeeNumber: string; positionType: 'vacant' | 'replacement' | 'new'; hireDate: string; classroomAssigned: string; accountNumber: string; contractType: string; contractStartDate: string; contractEndDate: string; letterNeeded: 'Change' | 'Rehire' | 'Other' | ''; notes: string }>({ incumbentName: '', employeeNumber: '', positionType: 'vacant', hireDate: '', classroomAssigned: '', accountNumber: '', contractType: '', contractStartDate: '', contractEndDate: '', letterNeeded: '', notes: '' });
+  // When set, the open panel edits this existing pending record instead of creating a new one.
+  const [editingFutureId, setEditingFutureId] = useState<string | null>(null);
   const { position, incumbent, accountNumber, org, vacant } = details;
+  // The backend stores submitted_by from the x-user-id header, which is
+  // session.user.wakeId ?? session.user.id (see api.ts viewHeaders).
+  const submitterId = session ? (session.user.wakeId || session.user.id) : null;
 
   // Populate the Notes tab badge on mount. The child notes tab keeps it in sync
   // via onCountChange after any add/delete, regardless of which tab is active.
@@ -396,11 +413,53 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
       accountNumber: accountNumber || form.accountNumber,
       classroomAssigned: incumbent.classroom || '',
       contractType: incumbent.contractType || '',
-      contractStartDate: incumbent.contractStart || '',
-      contractEndDate: incumbent.contractEnd || ''
+      contractStartDate: toDateInput(incumbent.contractStart),
+      contractEndDate: toDateInput(incumbent.contractEnd)
     }));
+    setEditingFutureId(null);
     setIncumbentTab('future');
     setFuturePanelOpen(true);
+  }
+
+  // Reopen the pending record in the form so it can be edited within the 1-hour window.
+  function editFuture() {
+    if (future?.status === 'locked') { showToast('Record is currently locked and cannot be edited'); return; }
+    if (!future) return;
+    setFutureError('');
+    setFutureNotice('');
+    setFutureForm({
+      incumbentName: future.incumbentName || '',
+      employeeNumber: future.employeeNumber || '',
+      positionType: future.positionType,
+      hireDate: toDateInput(future.hireDate),
+      classroomAssigned: future.classroomAssigned || '',
+      accountNumber: future.accountNumber || accountNumber || '',
+      contractType: future.contractType || '',
+      contractStartDate: toDateInput(future.contractStartDate),
+      contractEndDate: toDateInput(future.contractEndDate),
+      letterNeeded: future.letterNeeded || '',
+      notes: future.notes || ''
+    });
+    setEditingFutureId(future.id);
+    setIncumbentTab('future');
+    setFuturePanelOpen(true);
+  }
+
+  async function sendNow() {
+    if (!session || !future || futureSaving) return;
+    if (future.status === 'locked') { showToast('Record is currently locked and cannot be edited'); return; }
+    setFutureSaving(true);
+    setFutureError('');
+    setFutureNotice('');
+    try {
+      const updated = await sendNowFuturePosition(session, future.id);
+      setFuture(updated);
+      setFutureNotice('Record sent to the data team for review.');
+    } catch (failure) {
+      setFutureError(failure instanceof Error && failure.message.startsWith('HTTP_') ? 'The record could not be updated.' : (failure instanceof Error ? failure.message : 'The record could not be updated.'));
+    } finally {
+      setFutureSaving(false);
+    }
   }
 
   async function submitFuture() {
@@ -410,9 +469,8 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
     setFutureError('');
     setFutureNotice('');
     try {
-      const created = await createFuturePosition(session, position.posNumber, {
+      const payload = {
         posName: position.posName || `Position ${position.posNumber}`,
-        organization: org,
         ...futureForm,
         hireDate: futureForm.hireDate || null,
         classroomAssigned: futureForm.classroomAssigned || null,
@@ -422,10 +480,15 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
         contractEndDate: futureForm.contractEndDate || null,
         letterNeeded: futureForm.letterNeeded || null,
         notes: futureForm.notes || null
-      });
-      setFuture(created);
+      };
+      const wasEditing = Boolean(editingFutureId);
+      const saved = wasEditing
+        ? await updateFuturePosition(session, editingFutureId!, payload)
+        : await createFuturePosition(session, position.posNumber, { ...payload, organization: org });
+      setFuture(saved);
       setFuturePanelOpen(false);
-      setFutureNotice('Record saved as Pending. You have one hour to modify it, or click \'Send Now\'.');
+      setEditingFutureId(null);
+      setFutureNotice(wasEditing ? 'Record updated. You can keep editing for the rest of the hour.' : 'Record saved as Pending. You have one hour to modify it, or click \'Send Now\'.');
       resetFutureForm();
     } catch (failure) {
       setFutureError(failure instanceof Error && failure.message.startsWith('HTTP_') ? 'The record could not be saved.' : (failure instanceof Error ? failure.message : 'The record could not be saved.'));
@@ -503,6 +566,8 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                 )}
                 <button className="icon-button icon-button--bare" onClick={() => {
                   if (future?.status === 'locked') { showToast('Record is currently locked and cannot be edited'); return; }
+                  if (future?.status === 'pending') { editFuture(); return; }
+                  setEditingFutureId(null);
                   setIncumbentTab('future'); setFuturePanelOpen((open) => !open); setFutureError(''); setFutureNotice('');
                 }} aria-label="Stage a new incumbent" title="Stage a new incumbent (Future Positions)">
                   <UserPlus size={16} />
@@ -533,8 +598,8 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
             {futureEnabled && session && futurePanelOpen ? (
               <div className="future-position-panel">
                 <div className="future-position-panel-head">
-                  <span className="future-position-panel-title">Stage a new incumbent</span>
-                  <button className="icon-button" onClick={() => setFuturePanelOpen(false)} aria-label="Close panel" title="Close panel"><X size={16} /></button>
+                  <span className="future-position-panel-title">{editingFutureId ? 'Edit incumbent' : 'Stage a new incumbent'}</span>
+                  <button className="icon-button" onClick={() => { setEditingFutureId(null); setFuturePanelOpen(false); }} aria-label="Close panel" title="Close panel"><X size={16} /></button>
                 </div>
                 {futureLoading ? <div className="empty-state"><span className="loader" />Loading existing record</div> : (
                   <>
@@ -603,8 +668,8 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                       {futureError && <p className="future-position-error">{futureError}</p>}
                       {futureNotice && <p className="future-position-notice">{futureNotice}</p>}
                       <div className="future-position-actions">
-                        <button className="back-button" type="button" disabled={futureSaving} onClick={() => setFuturePanelOpen(false)}>Cancel</button>
-                        <button className="export-button" type="button" disabled={futureSaving} onClick={() => void submitFuture()}><Check size={14} />Save</button>
+                        <button className="back-button" type="button" disabled={futureSaving} onClick={() => { setEditingFutureId(null); setFuturePanelOpen(false); }}>Cancel</button>
+                        <button className="export-button" type="button" disabled={futureSaving} onClick={() => void submitFuture()}><Check size={14} />{editingFutureId ? 'Save changes' : 'Save'}</button>
                       </div>
                     </div>
                   </>
@@ -625,16 +690,22 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                       <RecordField label="New incumbent" value={future.incumbentName} />
                       <RecordField label="Employee no." value={future.employeeNumber} mono />
                       <RecordField label="Position type" value={future.positionType} />
-                      <RecordField label="Effective date" value={future.hireDate} />
+                      <RecordField label="Effective date" value={toDateInput(future.hireDate)} />
                       <RecordField label="Classroom" value={future.classroomAssigned} />
                       <RecordField label="Account" value={future.accountNumber} mono />
                       <RecordField label="Contract type" value={future.contractType} />
-                      <RecordField label="Contract start" value={future.contractStartDate} />
-                      <RecordField label="Contract end" value={future.contractEndDate} />
+                      <RecordField label="Contract start" value={toDateInput(future.contractStartDate)} />
+                      <RecordField label="Contract end" value={toDateInput(future.contractEndDate)} />
                       <RecordField label="Letter needed" value={future.letterNeeded} />
                       <RecordField label="Submitted by" value={future.submittedByName} />
                     </div>
                     {future.notes && <p className="future-position-card-notes">{future.notes}</p>}
+                    {future.status === 'pending' && submitterId !== null && submitterId === future.submittedBy && (
+                      <div className="future-position-card-actions">
+                        <button className="back-button" disabled={futureSaving} onClick={editFuture}><Pencil size={14} />Edit</button>
+                        <button className="export-button" disabled={futureSaving} onClick={() => void sendNow()}><Send size={14} />Send now</button>
+                      </div>
+                    )}
                   </>
                 ) : (!futureEnabled || !session) ? null : (
                   <div className="detail-placeholder"><CalendarClock size={24} /><p>No future incumbent has been staged for this position.</p></div>
