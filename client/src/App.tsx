@@ -1318,7 +1318,7 @@ export function App() {
 
   if (!session) {
     return <main className="login-shell">
-      <section className="login-art" aria-hidden="true"><div className="login-art-mark"><FileText size={26} /></div><p className="eyebrow">Human Resources</p><h1>Reporting workspace</h1><p>Clearer records. Faster decisions.</p></section>
+      <section className="login-art" aria-hidden="true"><div className="login-art-mark"><img src="https://resources.finalsite.net/images/v1747849462/wcpssnet/hftgawk1qsknmcaafdky/wcpss_logos_rgbAsset141.svg" alt="" /></div><p className="eyebrow">Human Resources</p><h1>Reporting workspace</h1><p>Clearer records. Faster decisions.</p></section>
       <section className="login-panel" aria-labelledby="login-title">
         <div className="login-panel-inner">
           <p className="eyebrow">Secure access</p><h2 id="login-title">Welcome back.</h2><p className="login-copy">Sign in with your Wake credentials to continue to HR Reporting.</p>
@@ -1336,7 +1336,7 @@ export function App() {
             {loginError && <div className="notice error"><AlertCircle size={18} /><span>{loginError}</span></div>}
             <button className="primary-button login-button" disabled={loggingIn}>{loggingIn ? 'Signing in...' : 'Sign in'}<ArrowUpRight size={17} /></button>
           </form>
-          <p className="fixture-note">Local testing uses synthetic fixture accounts. Production sign-in will connect to the approved Wake identity provider.</p>
+          <p className="fixture-note">NOTE: This application is for WCPSS staff use only. Should you experience an error or have questions about the data, please contact the Help Desk at helpdesk@wcpss.net</p>
         </div>
       </section>
     </main>;
@@ -1346,7 +1346,7 @@ export function App() {
     <main className="app-shell">
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
       <aside className={`side-navigation ${menuOpen ? 'open' : ''}`} aria-label="Main navigation">
-        <div className="side-navigation-heading"><span className="brand-mark"><FileText size={18} /></span><strong>HR Reporting</strong><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={17} /></button></div>
+        <div className="side-navigation-heading"><span className="brand-mark"><img src="https://resources.finalsite.net/images/v1747849462/wcpssnet/hftgawk1qsknmcaafdky/wcpss_logos_rgbAsset141.svg" alt="HR Reporting" /></span><strong>HR Reporting</strong><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={17} /></button></div>
         <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{isDataTeam && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions (Beta)</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant (Beta)</span></button>}</nav>
       </aside>
       <header className="topbar">
