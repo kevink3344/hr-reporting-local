@@ -75,17 +75,38 @@ function draftStorageKey(reportId: string, organization: string): string {
   return `hr-report-view-draft:${reportId}:${organization}`;
 }
 
-// When "fit to width" is active, column titles are compressed to a compact
-// short label so every column can fit in the viewport. If a name has no
-// underscore, take the first 3 characters ("MONTH" → "MON"). If it has an
-// underscore, take the first 2 characters before the underscore plus the first
-// character after it ("POS_NAME" → "PON", "A_MONTHS" → "AM").
+// Readable short labels for the Contract Report's known columns when
+// "fit to width" is active. Full words are kept where they fit; snake_case
+// keys are expanded into recognizable abbreviations instead of being collapsed
+// to 3 cryptic characters (which made "pos_name" and "pos_number" both "pon").
+const FIT_LABELS: Record<string, string> = {
+  pos_start: 'Start',
+  pos_ending: 'End',
+  pos_number: 'Pos #',
+  pos_name: 'Title',
+  fund: 'Fund',
+  purpose: 'Purp',
+  program: 'Prog',
+  object: 'Obj',
+  level: 'Level',
+  cost_center: 'Cost',
+  organization: 'Org',
+  months: 'Months',
+  a_months: 'Avail',
+  full_name: 'Name',
+  classroom_assignment: 'Room',
+  mailstop: 'Mail'
+};
+
 function fitColumnShort(column: string): string {
-  const underscoreIdx = column.indexOf('_');
-  if (underscoreIdx === -1) return column.slice(0, 3);
-  const before = column.slice(0, underscoreIdx).slice(0, 2);
-  const after = column.charAt(underscoreIdx + 1);
-  return before + after;
+  const label = FIT_LABELS[column];
+  if (label) return label;
+  // Fallback for unknown columns: expand snake_case into words and keep a short
+  // readable prefix of each, so the label stays meaningful instead of 3 letters.
+  return column
+    .split('_')
+    .map((word) => word.slice(0, 3))
+    .join(' ');
 }
 
 function GenericReportView({
