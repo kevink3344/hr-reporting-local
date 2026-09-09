@@ -346,7 +346,7 @@ const futurePositionSchema = z.object({
   positionType: z.enum(['vacant', 'replacement', 'new']).optional(),
   hireDate: z.string().trim().max(32).nullable().optional(),
   classroomAssigned: z.string().trim().max(255).nullable().optional(),
-  contractType: z.string().trim().max(64).nullable().optional(),
+  contractType: z.string().trim().max(255).nullable().optional(),
   contractStartDate: z.string().trim().max(32).nullable().optional(),
   contractEndDate: z.string().trim().max(32).nullable().optional(),
   letterNeeded: z.enum(['Change', 'Rehire', 'Other']).nullable().optional(),

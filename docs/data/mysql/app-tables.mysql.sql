@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS future_positions (
   position_type       ENUM('vacant','replacement','new') NOT NULL DEFAULT 'vacant',
   hire_date           DATE NULL,
   classroom_assigned  VARCHAR(255) NULL,
-  contract_type       VARCHAR(64) NULL,
+  contract_type       VARCHAR(255) NULL,
   contract_start_date DATE NULL,
   contract_end_date   DATE NULL,
   letter_needed       ENUM('Change','Rehire','Other') NULL,
