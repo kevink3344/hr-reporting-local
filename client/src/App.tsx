@@ -530,34 +530,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
           )
         ) : (
           <>
-            {futureLoading ? <div className="empty-state"><span className="loader" />Loading existing record</div> : future ? (
-              <>
-                <div className="future-position-detail-head">
-                  <span className={`status-pill status-pill--${future.status}`}>{future.status}</span>
-                  <strong className="future-position-detail-name">{future.incumbentName || 'Not provided'}</strong>
-                  {future.status === 'pending' && <span className="future-position-existing-hint">You can edit this for one hour.</span>}
-                  {future.status === 'locked' && <span className="future-position-existing-hint">Locked pending data team review.</span>}
-                  {future.status === 'completed' && <span className="future-position-existing-hint">This replacement has been completed.</span>}
-                </div>
-                <div className="record-grid">
-                  <RecordField label="New incumbent" value={future.incumbentName} />
-                  <RecordField label="Employee no." value={future.employeeNumber} mono />
-                  <RecordField label="Position type" value={future.positionType} />
-                  <RecordField label="Effective date" value={future.hireDate} />
-                  <RecordField label="Classroom" value={future.classroomAssigned} />
-                  <RecordField label="Account" value={future.accountNumber} mono />
-                  <RecordField label="Contract type" value={future.contractType} />
-                  <RecordField label="Contract start" value={future.contractStartDate} />
-                  <RecordField label="Contract end" value={future.contractEndDate} />
-                  <RecordField label="Letter needed" value={future.letterNeeded} />
-                  <RecordField label="Submitted by" value={future.submittedByName} />
-                </div>
-                {future.notes && <p className="future-position-card-notes">{future.notes}</p>}
-              </>
-            ) : (!futureEnabled || !session) ? null : (
-              <div className="detail-placeholder"><CalendarClock size={24} /><p>No future incumbent has been staged for this position.</p></div>
-            )}
-            {futureEnabled && session && futurePanelOpen && (
+            {futureEnabled && session && futurePanelOpen ? (
               <div className="future-position-panel">
                 <div className="future-position-panel-head">
                   <span className="future-position-panel-title">Stage a new incumbent</span>
@@ -637,6 +610,36 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                   </>
                 )}
               </div>
+            ) : (
+              <>
+                {futureLoading ? <div className="empty-state"><span className="loader" />Loading existing record</div> : future ? (
+                  <>
+                    <div className="future-position-detail-head">
+                      <span className={`status-pill status-pill--${future.status}`}>{future.status}</span>
+                      <strong className="future-position-detail-name">{future.incumbentName || 'Not provided'}</strong>
+                      {future.status === 'pending' && <span className="future-position-existing-hint">You can edit this for one hour.</span>}
+                      {future.status === 'locked' && <span className="future-position-existing-hint">Locked pending data team review.</span>}
+                      {future.status === 'completed' && <span className="future-position-existing-hint">This replacement has been completed.</span>}
+                    </div>
+                    <div className="record-grid">
+                      <RecordField label="New incumbent" value={future.incumbentName} />
+                      <RecordField label="Employee no." value={future.employeeNumber} mono />
+                      <RecordField label="Position type" value={future.positionType} />
+                      <RecordField label="Effective date" value={future.hireDate} />
+                      <RecordField label="Classroom" value={future.classroomAssigned} />
+                      <RecordField label="Account" value={future.accountNumber} mono />
+                      <RecordField label="Contract type" value={future.contractType} />
+                      <RecordField label="Contract start" value={future.contractStartDate} />
+                      <RecordField label="Contract end" value={future.contractEndDate} />
+                      <RecordField label="Letter needed" value={future.letterNeeded} />
+                      <RecordField label="Submitted by" value={future.submittedByName} />
+                    </div>
+                    {future.notes && <p className="future-position-card-notes">{future.notes}</p>}
+                  </>
+                ) : (!futureEnabled || !session) ? null : (
+                  <div className="detail-placeholder"><CalendarClock size={24} /><p>No future incumbent has been staged for this position.</p></div>
+                )}
+              </>
             )}
           </>
         )}
