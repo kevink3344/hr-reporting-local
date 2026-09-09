@@ -166,6 +166,8 @@ function GenericReportView({
   const [commentBody, setCommentBody] = useState('');
   const [commentRowKey, setCommentRowKey] = useState<string | null>(null);
   const [activeHighlightFilterId, setActiveHighlightFilterId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'csv' | 'pdf'>('excel');
   const filterDebounce = useRef<number | null>(null);
 
   // When the columns panel is open, lock body scroll and close on Escape
@@ -512,9 +514,39 @@ function GenericReportView({
       <button className="back-button" onClick={onBack}><ArrowLeft size={17} />All reports</button>
       <div className="report-view-actions">
         <span className="report-view-meta">{displayRows.length} of {result.rows.length} rows{result.truncated ? ' (truncated)' : ''}</span>
-        <button className="export-button export-button--secondary export-button--icon" onClick={() => void exportGenericReport(exportRun)} aria-label="Export to Excel" title="Export to Excel"><ExcelIcon /></button>
-        <button className="export-button export-button--secondary export-button--icon" onClick={() => void exportGenericReportToCsv(exportRun)} aria-label="Export to CSV" title="Export to CSV"><CsvIcon /></button>
-        <button className="export-button export-button--secondary export-button--icon" onClick={() => void exportGenericReportToPdf(exportRun)} aria-label="Export to PDF" title="Export to PDF"><PdfIcon /></button>
+        <div className="export-controls">
+          <div className="export-format-dropdown">
+            <button className="export-button export-button--secondary" onClick={() => setExportOpen((v) => !v)} aria-expanded={exportOpen} aria-haspopup="listbox" aria-label={`Export format: ${exportFormat}`} title="Select export format">
+              {exportFormat === 'excel' ? <ExcelIcon /> : exportFormat === 'csv' ? <CsvIcon /> : <PdfIcon />}
+              <span>Select format</span>
+              <ChevronDown size={14} className={exportOpen ? 'chevron-open' : ''} />
+            </button>
+            {exportOpen && (
+              <div className="export-format-menu" role="listbox" aria-label="Export format">
+                <button role="option" aria-selected={exportFormat === 'excel'} className={`export-format-option${exportFormat === 'excel' ? ' active' : ''}`} onClick={() => { setExportFormat('excel'); setExportOpen(false); }}>
+                  <span className="export-format-option-icon"><ExcelIcon size={16} /></span>
+                  <span className="export-format-option-label">Excel<br /><small>.xlsx</small></span>
+                  {exportFormat === 'excel' && <Check size={14} />}
+                </button>
+                <button role="option" aria-selected={exportFormat === 'csv'} className={`export-format-option${exportFormat === 'csv' ? ' active' : ''}`} onClick={() => { setExportFormat('csv'); setExportOpen(false); }}>
+                  <span className="export-format-option-icon"><CsvIcon size={16} /></span>
+                  <span className="export-format-option-label">CSV<br /><small>.csv</small></span>
+                  {exportFormat === 'csv' && <Check size={14} />}
+                </button>
+                <button role="option" aria-selected={exportFormat === 'pdf'} className={`export-format-option${exportFormat === 'pdf' ? ' active' : ''}`} onClick={() => { setExportFormat('pdf'); setExportOpen(false); }}>
+                  <span className="export-format-option-icon"><PdfIcon size={16} /></span>
+                  <span className="export-format-option-label">PDF<br /><small>.pdf</small></span>
+                  {exportFormat === 'pdf' && <Check size={14} />}
+                </button>
+              </div>
+            )}
+          </div>
+          <button className="export-button" onClick={() => {
+            if (exportFormat === 'excel') void exportGenericReport(exportRun);
+            else if (exportFormat === 'csv') void exportGenericReportToCsv(exportRun);
+            else void exportGenericReportToPdf(exportRun);
+          }} aria-label={`Export to ${exportFormat.toUpperCase()}`} title={`Export to ${exportFormat.toUpperCase()}`}>Export</button>
+        </div>
       </div>
       <div className="report-view-title"><p className="eyebrow">Report{result.report.sectionTitle ? ` — ${result.report.sectionTitle}` : ''}</p><h2>{result.report.title} <span className="report-scope">{result.organization}</span></h2></div>
     </div>

@@ -295,6 +295,23 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 .report-views-option:hover { background: #f0e9dc; }
 .report-views-option.active { background: #edf3ee; color: #2e5e56; font-weight: 600; }
 .report-views-empty { padding: 8px 10px; color: #8c857a; font-size: 12px; }
+.export-controls { display: inline-flex; align-items: center; gap: 8px; }
+.export-format-dropdown { position: relative; }
+.export-format-dropdown .chevron-open { transform: rotate(180deg); }
+.export-format-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 180px; padding: 6px; border: 1px solid #d9d0c1; border-radius: 10px; background: #fffdf8; box-shadow: 0 12px 28px rgba(38,35,31,.12); display: grid; gap: 2px; }
+.export-format-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: #26231f; text-align: left; font-size: 13px; }
+.export-format-option:hover { background: #f0e9dc; }
+.export-format-option.active { background: #edf3ee; color: #2e5e56; font-weight: 600; }
+.export-format-option-icon { display: grid; place-items: center; flex: 0 0 auto; }
+.export-format-option-label { flex: 1; line-height: 1.15; }
+.export-format-option-label small { color: #8c857a; font-weight: 400; font-size: 10px; }
+.export-format-option.active .export-format-option-label small { color: #56746c; }
+[data-theme="dark"] .export-format-menu { border-color: #3a332a; background: #1c1813; box-shadow: 0 12px 28px rgba(0,0,0,.5); }
+[data-theme="dark"] .export-format-option { color: #e8e2d7; }
+[data-theme="dark"] .export-format-option:hover { background: #2e2820; }
+[data-theme="dark"] .export-format-option.active { background: #24332e; color: #7ecbb5; }
+[data-theme="dark"] .export-format-option-label small { color: #9b9388; }
+[data-theme="dark"] .export-format-option.active .export-format-option-label small { color: #7ecbb5; }
 .export-button--dirty { border-color: #c9a066; }
 .link-button { border: 0; background: transparent; color: #2e5e56; font-size: 12px; font-weight: 600; text-decoration: underline; padding: 0 4px; }
 .link-button:hover { color: #1d4a44; }
