@@ -11,6 +11,7 @@ export const openApiDocument = {
     { name: 'Health', description: 'Service readiness' },
     { name: 'People', description: 'Employee and person lookups' },
     { name: 'Schools', description: 'School and department lookups' },
+    { name: 'Positions', description: 'Position lookups and notes' },
     { name: 'Reports', description: 'Report generation and scoping' }
   ],
   paths: {
@@ -111,7 +112,7 @@ export const openApiDocument = {
     },
     '/positions/{posNumber}': {
       get: {
-        tags: ['Reports'],
+        tags: ['Positions'],
         operationId: 'getPositionDetails',
         summary: 'Fetch a single position and its incumbent',
         parameters: [

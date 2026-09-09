@@ -862,6 +862,7 @@ export function App() {
     } catch { /* ignore */ }
     return '';
   });
+  const [showEmployeeId, setShowEmployeeId] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
@@ -1323,7 +1324,14 @@ export function App() {
           <p className="eyebrow">Secure access</p><h2 id="login-title">Welcome back.</h2><p className="login-copy">Sign in with your Wake credentials to continue to HR Reporting.</p>
           <form className="login-form" onSubmit={submitLogin}>
             <label>Wake ID<input value={wakeId} onChange={(event) => setWakeId(event.target.value)} placeholder="your Wake ID" autoComplete="username" required /></label>
-            <label>Employee ID<input value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} placeholder="your employee ID" inputMode="numeric" autoComplete="off" required /></label>
+            <label>Employee ID
+              <span className="password-field">
+                <input className="password-input" type={showEmployeeId ? 'text' : 'password'} value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} placeholder="your employee ID" inputMode="numeric" autoComplete="off" required />
+                <button type="button" className="password-toggle" aria-label={showEmployeeId ? 'Hide Employee ID' : 'Show Employee ID'} aria-pressed={showEmployeeId} onClick={() => setShowEmployeeId((visible) => !visible)}>
+                  {showEmployeeId ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
+            </label>
             <label className="remember-row"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /> Stay signed in on this device</label>
             {loginError && <div className="notice error"><AlertCircle size={18} /><span>{loginError}</span></div>}
             <button className="primary-button login-button" disabled={loggingIn}>{loggingIn ? 'Signing in...' : 'Sign in'}<ArrowUpRight size={17} /></button>
