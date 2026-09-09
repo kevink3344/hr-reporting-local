@@ -104,7 +104,7 @@ export function FuturePositionsPage({
     <div className="reports-page-heading">
       <div>
         <p className="eyebrow">Data team</p>
-        <h2 id="future-title">Future Positions.</h2>
+        <h2 id="future-title">Future Positions (Beta).</h2>
         <p className="reports-intro">Review staged incumbents as they are submitted. Pending records can be edited by staff for one hour; locked records are ready for your review. Complete a record once it is verified.</p>
       </div>
     </div>

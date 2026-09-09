@@ -136,10 +136,7 @@ WHERE (
         pi.pos_ending > date('now')
         OR IFNULL(pi.pos_ending, '0000-00-00') LIKE '0000-00-00%'
       )
-  AND (
-        (CAST(pi.pos_number AS TEXT) LIKE '999%' AND e.full_name > ' ')
-        OR pi.pos_number < 9990000
-      )
+  AND pi.pos_number NOT LIKE '888%'
   AND pi.organization = ?
 ORDER BY pi.object, pi.pos_name;
 `;

@@ -669,7 +669,7 @@ function FeaturesTab({ session }: { session: LoginSession }) {
 
   return <div className="settings-panel">
     <div className="settings-section">
-      <h3 className="settings-section-title"><Flag size={16} />Future Positions</h3>
+      <h3 className="settings-section-title"><Flag size={16} />Future Positions (Beta)</h3>
       <p className="settings-section-desc">When enabled, staff can stage a new incumbent directly from a position's detail page. The record stays <strong>pending</strong> for one hour before locking, then the data team reviews it and marks it <strong>completed</strong>.</p>
       <label className="toggle-row">
         <span className="toggle-row-label">Enable Future Positions</span>
@@ -690,7 +690,7 @@ function FeaturesTab({ session }: { session: LoginSession }) {
     </div>
 
     <div className="settings-section">
-      <h3 className="settings-section-title"><MessageSquare size={16} />AI Assistant</h3>
+      <h3 className="settings-section-title"><MessageSquare size={16} />AI Assistant (Beta)</h3>
       <p className="settings-section-desc">When enabled, a natural-language assistant can answer questions about the data — for example <em>“Which schools have the most open positions?”</em> It generates read-only, school-scoped SQL behind the scenes and shows a history of recent searches.</p>
       <label className="toggle-row">
         <span className="toggle-row-label">Enable AI Assistant</span>

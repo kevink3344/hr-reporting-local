@@ -238,6 +238,12 @@ function EmployeeRecord({
   onToggleVisibility,
   onOpenPosition,
   theme,
+  layoutHint,
+  canShowAll,
+  onShowAllSections,
+  onResetLayout,
+  onSaveLayout,
+  isLayoutDirty,
 }: {
   record: PersonRecord;
   layout: RecordLayout;
@@ -249,6 +255,12 @@ function EmployeeRecord({
   onToggleVisibility: (id: RecordSectionId) => void;
   onOpenPosition: (posNumber: string, organization: string) => void;
   theme: 'light' | 'dark';
+  layoutHint: string;
+  canShowAll: boolean;
+  onShowAllSections: () => void;
+  onResetLayout: () => void;
+  onSaveLayout: () => void;
+  isLayoutDirty: boolean;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
@@ -312,7 +324,8 @@ function EmployeeRecord({
   const totalVisible = visibleOrder.length;
 
   return <div className="employee-record">
-    <div className="record-title"><div><p className="eyebrow">Employee record</p><h3>{record.identity.fullName}</h3></div><div className="record-title-actions"><span className="record-active"><span className="status-dot" />Active</span><button className="icon-button" onClick={onClose} aria-label="Close employee record" title="Close employee record"><X size={17} /></button></div></div>
+    <div className="record-title"><div><span className="record-active"><span className="status-dot" />Active</span><p className="eyebrow">Employee record</p><h3>{record.identity.fullName}</h3></div><div className="record-title-actions"><button className="icon-button record-close" onClick={onClose} aria-label="Close employee record" title="Close employee record"><X size={17} /></button></div></div>
+    <div className="record-layout-actions" title={layoutHint}><button className="record-layout-link" onClick={onShowAllSections} disabled={!canShowAll}><Eye size={14} />Show all</button><button className="record-layout-link" onClick={onResetLayout}>Reset</button><button className="record-layout-link" onClick={onSaveLayout} disabled={!isLayoutDirty}><Check size={14} />Save layout</button></div>
     {layout.map((item) => {
       const visibleIndex = visibleOrder.indexOf(item.id);
       if (visibleIndex === -1) {
@@ -503,11 +516,11 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
     {toast && <div className="record-toast" role="status" aria-live="polite">{toast}</div>}
     <div className="record-title">
       <div>
-        <p className="eyebrow">Position details</p>
-        <h3>{position.posName || `Position ${position.posNumber}`}</h3>
         <span className={`record-status ${vacant ? 'record-status--vacant' : 'record-status--filled'}`}>
           <span className="status-dot" />{vacant ? 'Vacant' : 'Filled'}
         </span>
+        <p className="eyebrow">Position details</p>
+        <h3>{position.posName || `Position ${position.posNumber}`}</h3>
       </div>
       <div className="record-title-actions">
         <button className={`icon-button ${pinned ? 'position-pin-toggle--active' : 'position-pin-toggle'}`} onClick={onTogglePin} aria-label={pinned ? 'Unpin position' : 'Pin position'} title={pinned ? 'Unpin position' : 'Pin position'} aria-pressed={pinned}>
@@ -1326,7 +1339,7 @@ export function App() {
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
       <aside className={`side-navigation ${menuOpen ? 'open' : ''}`} aria-label="Main navigation">
         <div className="side-navigation-heading"><span className="brand-mark"><FileText size={18} /></span><strong>HR Reporting</strong><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={17} /></button></div>
-        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{isDataTeam && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant</span></button>}</nav>
+        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{isDataTeam && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions (Beta)</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant (Beta)</span></button>}</nav>
       </aside>
       <header className="topbar">
         <button className="icon-button menu-trigger" onClick={() => setMenuOpen(true)} aria-label="Open navigation" title="Open navigation"><Menu size={21} /></button>
@@ -1417,10 +1430,6 @@ export function App() {
             </div>
           )}
         </div>
-
-        <div className="detail-panel detail-panel--placeholder" aria-hidden={drawerOpen ? 'true' : undefined}>
-          <div className="detail-placeholder"><Users size={28} /><h3>Select a person</h3><p>Choose a record from the directory to inspect the complete employee report.</p></div>
-        </div>
       </section>
       </>}
       {drawerOpen && <>
@@ -1429,17 +1438,9 @@ export function App() {
           {positionLoading ? <div className="empty-state"><span className="loader" />Loading position details</div> : positionError ? <div className="empty-state"><AlertCircle size={26} /><p>{positionError}</p></div> : positionDetails ? (
             <PositionDetailView details={positionDetails} onClose={closeRecord} onOpenRecord={openRecordByEmployeeNumber} pinned={positionPinned} onTogglePin={() => void togglePositionPin()} session={session} futureEnabled={futureEnabled} />
           ) : recordLoading ? <div className="empty-state"><span className="loader" />Loading employee record</div> : recordError ? <div className="empty-state"><AlertCircle size={26} /><p>{recordError}</p></div> : personRecord ? <>
-            <div className="record-layout-toolbar">
-              <span className="record-layout-hint">{hiddenLayoutCount > 0 ? `${hiddenLayoutCount} section${hiddenLayoutCount === 1 ? '' : 's'} hidden` : 'Drag sections to reorder'}</span>
-              <span className="record-layout-actions">
-                {hiddenLayoutCount > 0 && <button className="back-button" onClick={showAllSectionsNow}><Eye size={14} />Show all sections</button>}
-                <button className="back-button" onClick={resetRecordLayoutState}>Reset to default</button>
-                <button className="export-button" onClick={saveRecordLayoutState} disabled={!isLayoutDirty}><Check size={14} />Save layout</button>
-              </span>
-            </div>
             {layoutNotice && <div className="notice success" role="status" aria-live="polite">{layoutNotice}</div>}
             <div aria-live="polite" className="sr-only">{layoutNotice}</div>
-            <EmployeeRecord record={personRecord} layout={recordLayout} userId={session?.user.id ?? null} onClose={closeRecord} onReorder={reorderRecordSection} onMoveUp={moveRecordSectionUp} onMoveDown={moveRecordSectionDown} onToggleVisibility={toggleSectionVisibility} onOpenPosition={openPositionByNumber} theme={theme} />
+            <EmployeeRecord record={personRecord} layout={recordLayout} userId={session?.user.id ?? null} onClose={closeRecord} onReorder={reorderRecordSection} onMoveUp={moveRecordSectionUp} onMoveDown={moveRecordSectionDown} onToggleVisibility={toggleSectionVisibility} onOpenPosition={openPositionByNumber} theme={theme} layoutHint={hiddenLayoutCount > 0 ? `${hiddenLayoutCount} section${hiddenLayoutCount === 1 ? '' : 's'} hidden` : 'Drag sections to reorder'} canShowAll={hiddenLayoutCount > 0} onShowAllSections={showAllSectionsNow} onResetLayout={resetRecordLayoutState} onSaveLayout={saveRecordLayoutState} isLayoutDirty={isLayoutDirty} />
           </> : <div className="detail-placeholder"><Users size={28} /><h3>Select a person</h3><p>Choose a record from the directory to inspect the complete employee report.</p></div>}
         </aside>
       </>}

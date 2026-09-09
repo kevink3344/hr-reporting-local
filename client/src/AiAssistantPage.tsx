@@ -122,7 +122,7 @@ export function AiAssistantPage({ session }: { session: LoginSession }) {
   return <section className="reports-page" aria-labelledby="ai-title">
     <div className="reports-page-heading">
       <div>
-        <p className="eyebrow">AI Assistant</p>
+        <p className="eyebrow">AI Assistant (Beta)</p>
         <h2 id="ai-title">Ask about your data.</h2>
         <p className="reports-intro">Describe what you are looking for in plain language. The assistant generates safe, read-only SQL against your district data and shows the answer below.</p>
       </div>
