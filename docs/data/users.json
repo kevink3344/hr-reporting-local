@@ -1,4 +1,15 @@
 [
+    {
+    "id": "user-004",
+    "username": "tsd.admin",
+    "wakeId": "tsd.admin",
+    "employeeNumber": "900004",
+    "displayName": "Test HR Admin",
+    "email": "tsd.admin@hrerporting.local",
+    "roles": ["tsd_admin","hr_admin"],
+    "schoolIds": ["school-001", "school-002"],
+    "canViewAllSchools": true
+  },
   {
     "id": "user-001",
     "username": "hr.admin",

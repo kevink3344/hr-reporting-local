@@ -21,7 +21,7 @@ export type DbConfig = {
   ssl: DbSslMode;
 };
 
-export type DataSource = 'fixtures' | 'mysql' | 'turso';
+export type DataSource = 'fixtures' | 'mysql' | 'turso' | 'hybrid';
 
 export type TursoConfig = {
   url: string;
@@ -50,6 +50,39 @@ export function getTursoConfig(): TursoConfig {
 export function isTursoConfigured(): boolean {
   const { url, authToken } = getTursoConfig();
   return Boolean(url && authToken);
+}
+
+export type AiConfig = {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  // Token budget for a single completion. Reasoning models put their
+  // chain-of-thought in `reasoning_content`, so budget must cover reasoning
+  // PLUS the final answer; a too-small value yields empty `content`.
+  maxTokens: number;
+  // Per-request timeout (ms). Reasoning models are slow, so a short default cuts
+  // them off mid-generation. Configurable via AI_REQUEST_TIMEOUT_MS.
+  requestTimeoutMs: number;
+};
+
+// Operator-supplied OpenAI-compatible AI endpoint. The API key is server-side
+// only and must never reach the browser. No default provider is baked in; the
+// operator supplies the base URL, model, and key (review decision #2).
+export function getAiConfig(): AiConfig {
+  const rawMaxTokens = Number(process.env.AI_MAX_TOKENS ?? '');
+  const rawTimeout = Number(process.env.AI_REQUEST_TIMEOUT_MS ?? '');
+  return {
+    baseUrl: (process.env.AI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
+    model: process.env.AI_MODEL ?? '',
+    apiKey: process.env.AI_API_KEY ?? '',
+    maxTokens: Number.isFinite(rawMaxTokens) && rawMaxTokens > 0 ? rawMaxTokens : 8192,
+    requestTimeoutMs: Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 120_000
+  };
+}
+
+export function isAiConfigured(): boolean {
+  const { model, apiKey } = getAiConfig();
+  return Boolean(model && apiKey);
 }
 
 // A host that is still a placeholder means the DBA has not provided real
@@ -81,6 +114,23 @@ export function getDataSource(): DataSource {
       return 'fixtures';
     }
     return 'turso';
+  }
+  if (requested === 'hybrid') {
+    // Hybrid = MySQL data + Turso config. Both must be configured or we
+    // cannot honor the split.
+    if (!isDbConfigured()) {
+      console.warn(
+        '[config] DATA_SOURCE=hybrid requested but MySQL is not configured; falling back to fixtures.'
+      );
+      return 'fixtures';
+    }
+    if (!isTursoConfigured()) {
+      console.warn(
+        '[config] DATA_SOURCE=hybrid requested but Turso config credentials are not configured; falling back to fixtures.'
+      );
+      return 'fixtures';
+    }
+    return 'hybrid';
   }
   return 'fixtures';
 }

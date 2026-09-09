@@ -29,6 +29,34 @@ export type SystemMessage = {
   updatedAt?: string;
 };
 
+// ---- System users (admin account management) ----
+// Mirrors server src/types.ts. roles/schoolIds are the decoded CSV columns
+// from the users table; the client sends arrays and the repo re-joins them.
+export type SystemUser = {
+  id: string;
+  username: string;
+  wakeId: string;
+  employeeNumber: string;
+  displayName: string;
+  email: string;
+  roles: string[];
+  schoolIds: string[];
+  canViewAllSchools: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SystemUserInput = {
+  username: string;
+  wakeId: string;
+  employeeNumber: string;
+  displayName: string;
+  email?: string | null;
+  roles?: string[];
+  schoolIds?: string[];
+  canViewAllSchools?: boolean;
+};
+
 export type School = {
   id: string;
   schoolNumber: string;
@@ -405,4 +433,43 @@ export type FuturePositionInput = {
 export type FeatureFlag = {
   key: string;
   enabled: boolean;
+};
+
+// GET /api/feature-flags now returns a map of every known flag.
+export type FeatureFlagsResponse = {
+  future_positions: boolean;
+  ai_assistant: boolean;
+};
+
+// ---- AI Assistant ----
+export type AiHistoryItem = {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+};
+
+export type AiAnswer = {
+  id: string;
+  userId: string;
+  question: string;
+  answer: string;
+  sql: string;
+  rowCount: number;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  model: string;
+  createdAt: string;
+};
+
+export type AiAskRequest = {
+  question: string;
+};
+
+// GET /api/health
+export type HealthStatus = {
+  ok: boolean;
+  dataSource: string;
+  dbReady: boolean;
+  aiConfigured: boolean;
 };

@@ -862,6 +862,20 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
   font-size: 10px;
   text-transform: uppercase;
 }
+.system-message-item-main.col {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.system-message-item-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #6b665e;
+}
 .system-message-item-actions {
   display: inline-flex;
   align-items: center;
@@ -923,6 +937,9 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 }
 [data-theme="dark"] .system-message-item-status {
   color: #9b9284;
+}
+[data-theme="dark"] .system-message-item-subtitle {
+  color: #a39a8c;
 }
 [data-theme="dark"] .system-message-item-actions .icon-button.danger:hover {
   color: #f4b3a2;
@@ -1312,4 +1329,154 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 }
 [data-theme="dark"] .settings-section-desc {
   color: #a89f91;
+}
+
+/* AI Assistant */
+.ai-question-field {
+  flex: 1 1 auto;
+  align-items: stretch;
+  /* The base .search-field locks height to 44px, but this field hosts a
+     multi-line textarea (min-height 72px). Let the container grow with the
+     textarea so the resize grip stays inside the rounded border. */
+  height: auto;
+  min-height: 72px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.ai-question-field textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 72px;
+  max-height: 320px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1c2420;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 2px 0;
+}
+.ai-question-field textarea::placeholder {
+  color: #9b9284;
+}
+.ai-question-field .field-clear {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.ai-answer-card,
+.ai-history-card {
+  margin-top: 24px;
+  border: 1px solid #d9d0c1;
+  background: rgba(255, 252, 246, .78);
+  border-radius: 12px;
+  padding: 20px;
+}
+.ai-answer-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.ai-answer-heading strong {
+  font-size: 17px;
+  color: #26231f;
+}
+.ai-answer-meta {
+  color: #8b6b3e;
+  font-size: 12.5px;
+}
+.ai-answer-text {
+  margin: 0 0 4px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #26231f;
+  white-space: pre-wrap;
+}
+.ai-result-table {
+  margin-top: 16px;
+}
+.ai-history-card .panel-heading {
+  margin-bottom: 14px;
+}
+.ai-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-history-open {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  align-items: baseline;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid #e3e7e2;
+  border-radius: 8px;
+  background: #fff;
+  color: #26231f;
+  cursor: pointer;
+  min-width: 0;
+}
+.ai-history-open:hover {
+  background: #f3f6f2;
+}
+.ai-history-question {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-history-when {
+  color: #8c857a;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ai-history-delete {
+  flex-shrink: 0;
+}
+[data-theme="dark"] .ai-question-field textarea {
+  color: #e8e2d7;
+}
+[data-theme="dark"] .ai-question-field textarea::placeholder {
+  color: #7b7265;
+}
+[data-theme="dark"] .ai-answer-card,
+[data-theme="dark"] .ai-history-card {
+  border-color: #3a332a;
+  background: #1c1813;
+}
+[data-theme="dark"] .ai-answer-heading strong {
+  color: #e8e2d7;
+}
+[data-theme="dark"] .ai-answer-meta {
+  color: #c9a066;
+}
+[data-theme="dark"] .ai-answer-text {
+  color: #c9c2b5;
+}
+[data-theme="dark"] .ai-history-open {
+  border-color: #3a332a;
+  background: #241f19;
+  color: #e8e2d7;
+}
+[data-theme="dark"] .ai-history-open:hover {
+  background: #2c271f;
+}
+[data-theme="dark"] .ai-history-question {
+  color: #e8e2d7;
+}
+[data-theme="dark"] .ai-history-when {
+  color: #9b9284;
 }

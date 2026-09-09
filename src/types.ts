@@ -184,6 +184,24 @@ export type SystemMessage = {
   updatedAt?: string;
 };
 
+// ---- System users (admin account management) ----
+// Admin-facing account record backed by the `users` table. Exposes the full
+// set of fields used by the Settings admin panel (login identity, display
+// name, email, granted roles, school scoping). Mirrors the client SystemUser.
+export type SystemUser = {
+  id: string;
+  username: string;
+  wakeId: string;
+  employeeNumber: string;
+  displayName: string;
+  email: string;
+  roles: string[];
+  schoolIds: string[];
+  canViewAllSchools: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type ReportStatus = 'active' | 'inactive';
 
 export type HighlightOperator = 'eq' | 'neq' | 'contains' | 'not_contains' | 'is_empty' | 'is_not_empty';

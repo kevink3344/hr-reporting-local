@@ -15,3 +15,4 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 );
 
 INSERT IGNORE INTO feature_flags (feature_key, enabled) VALUES ('future_positions', 0);
+INSERT IGNORE INTO feature_flags (feature_key, enabled) VALUES ('ai_assistant', 0);

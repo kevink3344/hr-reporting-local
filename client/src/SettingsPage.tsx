@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Archive, CheckCircle2, FileText, Flag, GripVertical, ListChecks, Pencil, Play, Plus, Settings2, Trash2, X } from 'lucide-react';
+import { AlertCircle, Archive, CheckCircle2, FileText, Flag, GripVertical, ListChecks, MessageSquare, Pencil, Play, Plus, Settings2, Trash2, X } from 'lucide-react';
 import { createReport, createReportSection, getReports, getReportSections, runReport, updateReport, updateReportSection, validateReportSql, getFeatureFlag, setFeatureFlag } from './api';
 import type { GenericReportRowWithSubreport, GenericSubreportRun, HighlightColorId, HighlightLogic, HighlightOperator, LoginSession, ReportDefinition, ReportHighlightRule, ReportHighlightCondition, ReportSection, School } from './types';
 import { describeHighlightRule, HIGHLIGHT_PALETTE, ruleMatchesRow } from './types';
@@ -616,7 +616,8 @@ function ReportsTab({ session, schools, sections, reports, refresh }: { session:
 }
 
 function FeaturesTab({ session }: { session: LoginSession }) {
-  const [enabled, setEnabled] = useState(false);
+  const [futureEnabled, setFutureEnabled] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
@@ -625,20 +626,38 @@ function FeaturesTab({ session }: { session: LoginSession }) {
   useEffect(() => {
     setLoading(true);
     getFeatureFlag(session)
-      .then((flag) => setEnabled(flag.enabled))
-      .catch(() => setError('The feature flag could not be loaded.'))
+      .then((flags) => {
+        setFutureEnabled(flags.future_positions);
+        setAiEnabled(flags.ai_assistant);
+      })
+      .catch(() => setError('The feature flags could not be loaded.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.user.id]);
 
-  async function toggle(next: boolean) {
+  async function toggleFuture(next: boolean) {
     setNotice('');
     setError('');
     setSaving(true);
     try {
       const flag = await setFeatureFlag(session, 'future_positions', next);
-      setEnabled(flag.enabled);
+      setFutureEnabled(flag.enabled);
       setNotice(flag.enabled ? 'Future Positions is now enabled.' : 'Future Positions is now disabled.');
+    } catch (failure) {
+      setError(errorMessage(failure, 'The feature flag could not be updated.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleAi(next: boolean) {
+    setNotice('');
+    setError('');
+    setSaving(true);
+    try {
+      const flag = await setFeatureFlag(session, 'ai_assistant', next);
+      setAiEnabled(flag.enabled);
+      setNotice(flag.enabled ? 'AI Assistant is now enabled.' : 'AI Assistant is now disabled.');
     } catch (failure) {
       setError(errorMessage(failure, 'The feature flag could not be updated.'));
     } finally {
@@ -654,20 +673,39 @@ function FeaturesTab({ session }: { session: LoginSession }) {
       <p className="settings-section-desc">When enabled, staff can stage a new incumbent directly from a position's detail page. The record stays <strong>pending</strong> for one hour before locking, then the data team reviews it and marks it <strong>completed</strong>.</p>
       <label className="toggle-row">
         <span className="toggle-row-label">Enable Future Positions</span>
-        <span className="toggle-label">{enabled ? 'On' : 'Off'}</span>
+        <span className="toggle-label">{futureEnabled ? 'On' : 'Off'}</span>
         <button
           type="button"
           role="switch"
-          aria-checked={enabled}
-          className={enabled ? 'switch switch-on' : 'switch'}
+          aria-checked={futureEnabled}
+          className={futureEnabled ? 'switch switch-on' : 'switch'}
           disabled={saving}
-          onClick={() => toggle(!enabled)}
+          onClick={() => toggleFuture(!futureEnabled)}
         >
           <span className="switch-knob" />
         </button>
       </label>
       {notice && <p className="settings-notice">{notice}</p>}
       {error && <p className="settings-error">{error}</p>}
+    </div>
+
+    <div className="settings-section">
+      <h3 className="settings-section-title"><MessageSquare size={16} />AI Assistant</h3>
+      <p className="settings-section-desc">When enabled, a natural-language assistant can answer questions about the data — for example <em>“Which schools have the most open positions?”</em> It generates read-only, school-scoped SQL behind the scenes and shows a history of recent searches.</p>
+      <label className="toggle-row">
+        <span className="toggle-row-label">Enable AI Assistant</span>
+        <span className="toggle-label">{aiEnabled ? 'On' : 'Off'}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={aiEnabled}
+          className={aiEnabled ? 'switch switch-on' : 'switch'}
+          disabled={saving}
+          onClick={() => toggleAi(!aiEnabled)}
+        >
+          <span className="switch-knob" />
+        </button>
+      </label>
     </div>
   </div>;
 }

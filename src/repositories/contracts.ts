@@ -20,6 +20,7 @@ import type {
   School,
   SystemMessage,
   SystemMessageType,
+  SystemUser,
   ViewDefinition
 } from '../types.js';
 
@@ -238,6 +239,36 @@ export interface SystemMessagesRepository {
   delete(id: string): Promise<boolean>;
 }
 
+export type SystemUserInput = {
+  username: string;
+  wakeId: string;
+  employeeNumber: string;
+  displayName: string;
+  email?: string | null;
+  roles?: string[];
+  schoolIds?: string[];
+  canViewAllSchools?: boolean;
+};
+
+export type SystemUserUpdate = {
+  username?: string;
+  wakeId?: string;
+  employeeNumber?: string;
+  displayName?: string;
+  email?: string | null;
+  roles?: string[];
+  schoolIds?: string[];
+  canViewAllSchools?: boolean;
+};
+
+export interface UsersRepository {
+  listAll(): Promise<SystemUser[]>;
+  getById(id: string): Promise<SystemUser | null>;
+  create(input: SystemUserInput): Promise<SystemUser>;
+  update(id: string, patch: SystemUserUpdate): Promise<SystemUser | null>;
+  delete(id: string): Promise<boolean>;
+}
+
 export type FuturePositionInput = {
   posNumber: string;
   posName: string;
@@ -304,6 +335,38 @@ export interface FeatureFlagsRepository {
   set(key: string, enabled: boolean, updatedBy: string | null): Promise<FeatureFlag>;
 }
 
+// One persisted AI ask. `rows`/`columns` are the capped result set (JSON in
+// the DB) so a past ask can be replayed without re-calling the model.
+export type AiHistoryEntry = {
+  id: string;
+  userId: string;
+  question: string;
+  answer: string;
+  sql: string;
+  rowCount: number;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  model: string;
+  createdAt: string;
+};
+
+// Light list item returned by GET /api/ai/history (no full rows/columns).
+export type AiHistoryListItem = {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+};
+
+export type AiHistoryInput = Omit<AiHistoryEntry, 'id' | 'createdAt'>;
+
+export interface AiHistoryRepository {
+  create(input: AiHistoryInput): Promise<AiHistoryEntry>;
+  list(userId: string, limit?: number): Promise<AiHistoryListItem[]>;
+  getById(id: string, userId: string): Promise<AiHistoryEntry | null>;
+  delete(id: string, userId: string): Promise<boolean>;
+}
+
 export type Repositories = {
   people: PeopleRepository;
   schools: SchoolsRepository;
@@ -320,4 +383,6 @@ export type Repositories = {
   systemMessages: SystemMessagesRepository;
   futurePositions: FuturePositionsRepository;
   featureFlags: FeatureFlagsRepository;
+  aiHistory: AiHistoryRepository;
+  users: UsersRepository;
 };

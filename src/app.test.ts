@@ -21,7 +21,11 @@ describe('HR Reporting API foundation', () => {
   it('reports fixture-backed health', async () => {
     const response = await fetch(`${baseUrl}/api/health`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, dataSource: 'fixtures', dbReady: false });
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.dataSource).toBe('fixtures');
+    expect(body.dbReady).toBe(false);
+    expect(typeof body.aiConfigured).toBe('boolean');
   });
 
   it('authenticates a fixture user with Wake ID and Employee ID', async () => {

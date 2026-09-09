@@ -5,9 +5,9 @@ import type {
   GenericReportRun,
   OpenPositionRow,
   Person,
+  PersonRecord,
   PositionComment,
   PositionPin,
-  PersonRecord,
   PositionDetails,
   ReportDefinition,
   ReportSection,
@@ -17,6 +17,7 @@ import type {
   School,
   SystemMessage,
   SystemMessageType,
+  SystemUser,
   ViewDefinition
 } from '../types.js';
 import type {
@@ -38,7 +39,10 @@ import type {
   ReportViewListFilter,
   ReportViewUpdate,
   SystemMessageInput,
-  SystemMessageUpdate
+  SystemMessageUpdate,
+  SystemUserInput,
+  SystemUserUpdate,
+  AiHistoryEntry
 } from './contracts.js';
 import { getLibsqlClient, query } from '../db-turso.js';
 import { viewDefinitionSchema } from '../report-views.js';
@@ -1033,6 +1037,107 @@ export const tursoRepositories: Repositories = {
       return true;
     }
   },
+  users: {
+    async listAll() {
+      const rows = await query<SystemUserRow>(
+        'SELECT * FROM users ORDER BY username ASC',
+        []
+      );
+      return rows.map(toSystemUser);
+    },
+    async getById(id) {
+      const rows = await query<SystemUserRow>('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+      return rows[0] ? toSystemUser(rows[0]) : null;
+    },
+    async create(input: SystemUserInput) {
+      const username = (input.username ?? '').trim();
+      const wakeId = (input.wakeId ?? '').trim();
+      const employeeNumber = (input.employeeNumber ?? '').trim();
+      const displayName = (input.displayName ?? '').trim();
+      if (!username || !wakeId || !employeeNumber || !displayName) {
+        throw codedError('USER_FIELDS_REQUIRED');
+      }
+      await assertNoDuplicateUserField({ username, wakeId, employeeNumber });
+      const id = newId();
+      const now = nowIso();
+      await query(
+        `INSERT INTO users
+          (id, username, wake_id, employee_number, display_name, email, roles,
+           school_ids, can_view_all_schools, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          username,
+          wakeId,
+          employeeNumber,
+          displayName,
+          dbValue(input.email?.trim() || null),
+          (input.roles ?? []).join(','),
+          (input.schoolIds ?? []).join(','),
+          input.canViewAllSchools ? 1 : 0,
+          now,
+          now
+        ]
+      );
+      const created = await query<SystemUserRow>('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+      return toSystemUser(created[0]);
+    },
+    async update(id, patch: SystemUserUpdate) {
+      const existing = await query<SystemUserRow>('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+      if (!existing[0]) return null;
+      const nextUsername = patch.username !== undefined ? patch.username.trim() : existing[0].username;
+      const nextWakeId = patch.wakeId !== undefined ? patch.wakeId.trim() : existing[0].wake_id;
+      const nextEmployeeNumber =
+        patch.employeeNumber !== undefined ? patch.employeeNumber.trim() : existing[0].employee_number;
+      const nextDisplayName =
+        patch.displayName !== undefined ? patch.displayName.trim() : existing[0].display_name;
+      if (!nextUsername || !nextWakeId || !nextEmployeeNumber || !nextDisplayName) {
+        throw codedError('USER_FIELDS_REQUIRED');
+      }
+      await assertNoDuplicateUserField(
+        { username: nextUsername, wakeId: nextWakeId, employeeNumber: nextEmployeeNumber },
+        id
+      );
+      const nextCanViewAll =
+        patch.canViewAllSchools !== undefined
+          ? patch.canViewAllSchools
+          : toBoolean(existing[0].can_view_all_schools);
+      const now = nowIso();
+      await query(
+        `UPDATE users SET
+          username = ?,
+          wake_id = ?,
+          employee_number = ?,
+          display_name = ?,
+          email = ?,
+          roles = ?,
+          school_ids = ?,
+          can_view_all_schools = ?,
+          updated_at = ?
+        WHERE id = ?`,
+        [
+          nextUsername,
+          nextWakeId,
+          nextEmployeeNumber,
+          nextDisplayName,
+          patch.email !== undefined ? dbValue(patch.email?.trim() || null) : dbValue(existing[0].email ?? null),
+          patch.roles !== undefined ? patch.roles.join(',') : (existing[0].roles ?? ''),
+          patch.schoolIds !== undefined ? patch.schoolIds.join(',') : (existing[0].school_ids ?? ''),
+          nextCanViewAll ? 1 : 0,
+          now,
+          id
+        ]
+      );
+      const updated = await query<SystemUserRow>('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+      return toSystemUser(updated[0]);
+    },
+    async delete(id) {
+      const rows = await query<SystemUserRow>('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+      if (!rows[0]) return false;
+      await query('DELETE FROM users WHERE id = ?', [id]);
+      return true;
+    }
+  },
   systemMessages: {
     async listActive() {
       const rows = await query<SystemMessageRow>(
@@ -1267,6 +1372,59 @@ export const tursoRepositories: Repositories = {
       const rows = await query<FeatureFlagRow>('SELECT * FROM feature_flags WHERE key = ? LIMIT 1', [key]);
       return toFeatureFlag(rows[0]);
     }
+  },
+  aiHistory: {
+    async create(input) {
+      const id = newId();
+      const now = nowIso();
+      await query(
+        `INSERT INTO ask_history
+          (id, user_id, question, answer, sql, row_count, columns, rows, model, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          input.userId,
+          input.question,
+          input.answer,
+          input.sql,
+          input.rowCount,
+          JSON.stringify(input.columns),
+          JSON.stringify(input.rows),
+          input.model,
+          now
+        ]
+      );
+      const rows = await query<AiHistoryRow>('SELECT * FROM ask_history WHERE id = ? LIMIT 1', [id]);
+      return toAiHistoryEntry(rows[0]);
+    },
+    async list(userId, limit = 20) {
+      const rows = await query<AiHistoryRow>(
+        `SELECT * FROM ask_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
+        [userId, limit]
+      );
+      return rows.map((row) => ({
+        id: String(row.id),
+        question: String(row.question),
+        answer: String(row.answer),
+        createdAt: String(row.created_at)
+      }));
+    },
+    async getById(id, userId) {
+      const rows = await query<AiHistoryRow>(
+        'SELECT * FROM ask_history WHERE id = ? AND user_id = ? LIMIT 1',
+        [id, userId]
+      );
+      return rows[0] ? toAiHistoryEntry(rows[0]) : null;
+    },
+    async delete(id, userId) {
+      const rows = await query<AiHistoryRow>(
+        'SELECT id FROM ask_history WHERE id = ? AND user_id = ? LIMIT 1',
+        [id, userId]
+      );
+      if (!rows[0]) return false;
+      await query('DELETE FROM ask_history WHERE id = ?', [id]);
+      return true;
+    }
   }
 };
 
@@ -1283,6 +1441,44 @@ function toFeatureFlag(row: FeatureFlagRow): FeatureFlag {
     enabled: (row.enabled ?? 0) === 1,
     updatedBy: row.updated_by ? String(row.updated_by) : null,
     updatedAt: row.updated_at ? String(row.updated_at) : null
+  };
+}
+
+type AiHistoryRow = {
+  id: string;
+  user_id: string;
+  question: string;
+  answer: string;
+  sql: string;
+  row_count: number | null;
+  columns: string | null;
+  rows: string | null;
+  model: string;
+  created_at: string;
+};
+
+function parseJsonRows(value: string | null): Record<string, unknown>[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function toAiHistoryEntry(row: AiHistoryRow): AiHistoryEntry {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    question: String(row.question),
+    answer: String(row.answer),
+    sql: row.sql ? String(row.sql) : '',
+    rowCount: row.row_count ?? 0,
+    columns: parseColumns(row.columns) ?? [],
+    rows: parseJsonRows(row.rows),
+    model: row.model ? String(row.model) : '',
+    createdAt: String(row.created_at)
   };
 }
 
@@ -1371,6 +1567,67 @@ async function assertNoDuplicateSplash(type: string, ignoreId?: string): Promise
     ignoreId ? ['splash', ignoreId] : ['splash']
   );
   if (splash[0]) throw codedError('SPLASH_ALREADY_ACTIVE');
+}
+
+// ---- System users (admin account management) ----
+type SystemUserRow = {
+  id: string;
+  username: string;
+  wake_id: string;
+  employee_number: string;
+  display_name: string;
+  email: string | null;
+  roles: string | null;
+  school_ids: string | null;
+  can_view_all_schools: number | boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+function splitCsv(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function toBoolean(value: number | boolean | string | null | undefined): boolean {
+  return value === true || value === 1 || value === '1';
+}
+
+function toSystemUser(row: SystemUserRow): SystemUser {
+  return {
+    id: String(row.id),
+    username: row.username,
+    wakeId: row.wake_id,
+    employeeNumber: row.employee_number,
+    displayName: row.display_name,
+    email: row.email ?? '',
+    roles: splitCsv(row.roles),
+    schoolIds: splitCsv(row.school_ids),
+    canViewAllSchools: toBoolean(row.can_view_all_schools),
+    createdAt: row.created_at ?? undefined,
+    updatedAt: row.updated_at ?? undefined
+  };
+}
+
+async function assertNoDuplicateUser(
+  column: 'username' | 'wake_id' | 'employee_number',
+  value: string,
+  ignoreId?: string
+): Promise<void> {
+  const rows = await query<SystemUserRow>(
+    `SELECT id FROM users WHERE ${column} = ?${ignoreId ? ' AND id != ?' : ''} LIMIT 1`,
+    ignoreId ? [value, ignoreId] : [value]
+  );
+  if (rows[0]) throw codedError('USER_FIELD_CONFLICT');
+}
+
+async function assertNoDuplicateUserField(
+  input: { username: string; wakeId: string; employeeNumber: string },
+  ignoreId?: string
+): Promise<void> {
+  await assertNoDuplicateUser('username', input.username, ignoreId);
+  await assertNoDuplicateUser('wake_id', input.wakeId, ignoreId);
+  await assertNoDuplicateUser('employee_number', input.employeeNumber, ignoreId);
 }
 
 type SectionRow = {
@@ -1629,7 +1886,7 @@ function buildRecord(
     position: employee.pos_name ?? '',
     positionNumber: employee.pos_number !== null && employee.pos_number !== undefined ? String(employee.pos_number) : '',
     accountCode: employee.account_code ?? '',
-    tapPercent: employee.tap ?? 0,
+    tapPercent: Math.round((employee.tap ?? 0) * 100),
     payGrade: employee.pay_grade ?? '',
     group: employee.group1 ?? '',
     mailStop: employee.mailstop ?? '',

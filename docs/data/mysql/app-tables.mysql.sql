@@ -21,7 +21,28 @@
 --
 -- Idempotent: DROP TABLE IF EXISTS in FK-safe order to the reverse of the
 -- CREATE order, so re-running rebuilds cleanly. CREATE uses IF NOT EXISTS.
+--
+-- NOTE: the teardown DROP block is intentionally at the TOP (before the
+-- CREATEs) and the seed at the BOTTOM. A full run then rebuilds every table
+-- from scratch and re-seeds the fixture users, instead of creating + seeding
+-- and then immediately dropping. Run ONCE by the DBA (or re-run to reset).
 -- =====================================================================
+
+-- =====================================================================
+-- Teardown (children before parents; no real FKs, so this is just logical).
+-- Run to reset before re-running CREATE.
+-- =====================================================================
+DROP TABLE IF EXISTS report_view_comments;
+DROP TABLE IF EXISTS report_view_invites;
+DROP TABLE IF EXISTS report_views;
+DROP TABLE IF EXISTS reports;
+DROP TABLE IF EXISTS report_sections;
+DROP TABLE IF EXISTS position_comments;
+DROP TABLE IF EXISTS position_pins;
+DROP TABLE IF EXISTS system_messages;
+DROP TABLE IF EXISTS future_positions;
+DROP TABLE IF EXISTS feature_flags;
+DROP TABLE IF EXISTS users;
 
 -- =====================================================================
 -- users — application login / role mapping
@@ -270,20 +291,5 @@ CREATE INDEX idx_comments_view ON report_view_comments(view_id, created_at);
 REPLACE INTO users (id, username, wake_id, employee_number, display_name, email, roles, school_ids, can_view_all_schools) VALUES
   ('user-001', 'hr.admin', 'hr.admin', '900003', 'Test HR Admin', 'hr.admin@example.test', 'hr_admin', 'school-001,school-002', 1),
   ('user-002', 'school.staff', 'school.staff', '900001', 'Test School Staff', 'school.staff@example.test', 'school_staff', 'school-001', 0),
-  ('user-003', 'principal.one', 'principal.one', '900002', 'Test Principal', 'principal.one@example.test', 'principal', 'school-002', 0);
-
--- =====================================================================
--- DROP (in reverse order — children before parents; no real FKs, so this
--- is just logical. Run to tear down cleanly before re-running CREATE.)
--- =====================================================================
-DROP TABLE IF EXISTS report_view_comments;
-DROP TABLE IF EXISTS report_view_invites;
-DROP TABLE IF EXISTS report_views;
-DROP TABLE IF EXISTS reports;
-DROP TABLE IF EXISTS report_sections;
-DROP TABLE IF EXISTS position_comments;
-DROP TABLE IF EXISTS position_pins;
-DROP TABLE IF EXISTS system_messages;
-DROP TABLE IF EXISTS future_positions;
-DROP TABLE IF EXISTS feature_flags;
-DROP TABLE IF EXISTS users;
+  ('user-003', 'principal.one', 'principal.one', '900002', 'Test Principal', 'principal.one@example.test', 'principal', 'school-002', 0),
+  ('user-004', 'tsd.admin', 'tsd.admin', '900004', 'Test HR Admin', 'tsd.admin@hrerporting.local', 'tsd_admin,hr_admin', 'school-001,school-002', 1);

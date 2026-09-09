@@ -6,6 +6,7 @@ import { PositionsPage } from './PositionsPage';
 import { FuturePositionsPage } from './FuturePositionsPage';
 import { ReportsPage } from './ReportsPage';
 import { SettingsPage } from './SettingsPage';
+import { AiAssistantPage } from './AiAssistantPage';
 import { UserSettingsPage } from './UserSettingsPage';
 import { SchoolCombobox } from './SchoolCombobox';
 import { DEFAULT_RECORD_LAYOUT, RECORD_SECTION_TITLES, arraysEqual, hiddenSectionIds, loadRecordLayout, reorderVisibleSections, resetRecordLayout, saveRecordLayout, setSectionVisible, showAllSections, visibleSectionIds } from './recordLayout';
@@ -797,7 +798,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'home' | 'reports' | 'positions' | 'settings' | 'future-positions'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'reports' | 'positions' | 'settings' | 'future-positions' | 'ai'>('home');
   const [homePage, setHomePage] = useState<HomePage>('home');
   const [userSettingsOpen, setUserSettingsOpen] = useState(false);
   const [positionPinsCount, setPositionPinsCount] = useState(0);
@@ -805,6 +806,8 @@ export function App() {
   const isDataTeam = session?.user.roles.includes('data_team') ?? false;
   // Feature flags — Future Positions toggle (admin-controlled, gates the '+' button).
   const [futureEnabled, setFutureEnabled] = useState(false);
+  // Feature flags — AI Assistant toggle (admin-controlled, gates the AI nav + page).
+  const [aiEnabled, setAiEnabled] = useState(false);
   // System-wide messages: active announcements loaded from the server, plus
   // the set the current user has dismissed (per-user, persisted in localStorage).
   const [systemMessages, setSystemMessages] = useState<SystemMessage[]>([]);
@@ -872,13 +875,17 @@ export function App() {
     return () => { cancelled = true; };
   }, [session?.user?.id]);
 
-  // Load the Future Positions feature flag on user change.
+  // Load the feature flags on user change.
   useEffect(() => {
-    if (!session) { setFutureEnabled(false); return; }
+    if (!session) { setFutureEnabled(false); setAiEnabled(false); return; }
     let cancelled = false;
     getFeatureFlag(session)
-      .then((flag) => { if (!cancelled) setFutureEnabled(flag.enabled); })
-      .catch(() => { if (!cancelled) setFutureEnabled(false); });
+      .then((flags) => {
+        if (cancelled) return;
+        setFutureEnabled(flags.future_positions);
+        setAiEnabled(flags.ai_assistant);
+      })
+      .catch(() => { if (!cancelled) { setFutureEnabled(false); setAiEnabled(false); } });
     return () => { cancelled = true; };
   }, [session?.user?.id]);
 
@@ -995,7 +1002,7 @@ export function App() {
       } catch { /* ignore */ }
     } catch (loginFailure) {
       setLoginError(loginFailure instanceof Error && loginFailure.message === 'INVALID_CREDENTIALS'
-        ? 'Wake ID and Employee ID did not match a test account.'
+        ? 'Wake ID and Employee ID did not match a user in the system.'
         : 'The sign-in service is unavailable.');
     } finally {
       setLoggingIn(false);
@@ -1014,9 +1021,10 @@ export function App() {
     } catch { /* ignore */ }
   }
 
-  function navigate(view: 'home' | 'reports' | 'positions' | 'settings' | 'future-positions') {
+  function navigate(view: 'home' | 'reports' | 'positions' | 'settings' | 'future-positions' | 'ai') {
     if (view === 'settings' && !isAdmin) return;
     if (view === 'future-positions' && !isDataTeam) return;
+    if (view === 'ai' && !aiEnabled) return;
     setActiveView(view);
     setMenuOpen(false);
   }
@@ -1242,7 +1250,7 @@ export function App() {
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
       <aside className={`side-navigation ${menuOpen ? 'open' : ''}`} aria-label="Main navigation">
         <div className="side-navigation-heading"><span className="brand-mark"><FileText size={18} /></span><strong>HR Reporting</strong><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={17} /></button></div>
-        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{isDataTeam && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}</nav>
+        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{isDataTeam && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant</span></button>}</nav>
       </aside>
       <header className="topbar">
         <button className="icon-button menu-trigger" onClick={() => setMenuOpen(true)} aria-label="Open navigation" title="Open navigation"><Menu size={21} /></button>
@@ -1280,7 +1288,7 @@ export function App() {
         </div>
       )}
 
-      {activeView === 'reports' ? <ReportsPage schools={schools} session={session} onManage={isAdmin ? () => navigate('settings') : undefined} onOpenRecord={openRecordByEmployeeNumber} onOpenPosition={openPositionByNumber} /> : activeView === 'positions' ? <PositionsPage session={session} schools={schools} onOpenPosition={openPositionByNumber} /> : activeView === 'future-positions' ? (isDataTeam && session ? <FuturePositionsPage session={session} onOpenPosition={openPositionByNumber} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Data team access is required.</span></div></section>) : activeView === 'settings' ? (isAdmin && session ? <SettingsPage session={session} schools={schools} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : <>
+      {activeView === 'reports' ? <ReportsPage schools={schools} session={session} onManage={isAdmin ? () => navigate('settings') : undefined} onOpenRecord={openRecordByEmployeeNumber} onOpenPosition={openPositionByNumber} /> : activeView === 'positions' ? <PositionsPage session={session} schools={schools} onOpenPosition={openPositionByNumber} /> : activeView === 'future-positions' ? (isDataTeam && session ? <FuturePositionsPage session={session} onOpenPosition={openPositionByNumber} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Data team access is required.</span></div></section>) : activeView === 'settings' ? (isAdmin && session ? <SettingsPage session={session} schools={schools} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : activeView === 'ai' ? (aiEnabled && session ? <AiAssistantPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. The AI Assistant is disabled.</span></div></section>) : <>
       <section className="hero-band">
         <div>
           <p className="eyebrow">People directory</p>

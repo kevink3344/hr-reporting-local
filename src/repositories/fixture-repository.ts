@@ -5,9 +5,9 @@ import type {
   GenericReportRun,
   OpenPositionRow,
   Person,
+  PersonRecord,
   PositionComment,
   PositionPin,
-  PersonRecord,
   PositionDetails,
   ReportDefinition,
   ReportSection,
@@ -17,7 +17,9 @@ import type {
   School,
   SystemMessage,
   SystemMessageType,
-  ViewDefinition
+  SystemUser,
+  ViewDefinition,
+  FixtureUser
 } from '../types.js';
 import type {
   FuturePositionInput,
@@ -36,7 +38,12 @@ import type {
   ReportViewListFilter,
   ReportViewUpdate,
   SystemMessageInput,
-  SystemMessageUpdate
+  SystemMessageUpdate,
+  SystemUserInput,
+  SystemUserUpdate,
+  AiHistoryEntry,
+  AiHistoryInput,
+  AiHistoryListItem
 } from './contracts.js';
 import { REPORT_ROW_CAP, bindOrganization, newId, nowIso, validateReportSql, validateSubreportSql } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
@@ -486,8 +493,10 @@ export const fixtureRepositories: Repositories = {
   positionPins: buildFixturePositionPins(),
   positionComments: buildFixturePositionComments(),
   systemMessages: buildFixtureSystemMessages(),
+  users: buildFixtureUsers(),
   futurePositions: buildFixtureFuturePositions(),
-  featureFlags: buildFixtureFeatureFlags()
+  featureFlags: buildFixtureFeatureFlags(),
+  aiHistory: buildFixtureAiHistory()
 };
 
 function buildFixtureReportViews(): Repositories['reportViews'] {
@@ -864,6 +873,128 @@ function buildFixtureSystemMessages(): Repositories['systemMessages'] {
   };
 }
 
+// ---- System users (admin account management) ----
+// In-memory mirror of the `users` table, seeded from docs/data/users.json so
+// the fixture build exposes the same 4 accounts as the MySQL/Turso builds.
+let fixtureUsers: SystemUser[] | null = null;
+
+async function loadFixtureUsers(): Promise<SystemUser[]> {
+  if (!fixtureUsers) {
+    const raw = await readFixture<FixtureUser>('users.json');
+    fixtureUsers = raw.map((user) => ({
+      id: user.id,
+      username: user.username,
+      wakeId: user.wakeId,
+      employeeNumber: user.employeeNumber,
+      displayName: user.displayName,
+      email: user.email ?? '',
+      roles: [...(user.roles ?? [])],
+      schoolIds: [...(user.schoolIds ?? [])],
+      canViewAllSchools: user.canViewAllSchools
+    }));
+  }
+  return fixtureUsers;
+}
+
+function validateUserField(name: string, value: string): void {
+  if (!value) throw Object.assign(new Error('USER_FIELDS_REQUIRED'), { code: 'USER_FIELDS_REQUIRED' });
+}
+
+function assertNoDuplicateFixtureUser(
+  fields: { username: string; wakeId: string; employeeNumber: string },
+  ignoreId?: string
+): void {
+  const users = fixtureUsers ?? [];
+  const exists = (fn: (u: SystemUser) => string) =>
+    (v: string) => users.some((u) => u.id !== ignoreId && fn(u) === v);
+  if (exists((u) => u.username)(fields.username)) {
+    throw Object.assign(new Error('USER_FIELD_CONFLICT'), { code: 'USER_FIELD_CONFLICT' });
+  }
+  if (exists((u) => u.wakeId)(fields.wakeId)) {
+    throw Object.assign(new Error('USER_FIELD_CONFLICT'), { code: 'USER_FIELD_CONFLICT' });
+  }
+  if (exists((u) => u.employeeNumber)(fields.employeeNumber)) {
+    throw Object.assign(new Error('USER_FIELD_CONFLICT'), { code: 'USER_FIELD_CONFLICT' });
+  }
+}
+
+function buildFixtureUsers(): Repositories['users'] {
+  return {
+    async listAll() {
+      const users = await loadFixtureUsers();
+      return users.slice().sort((a, b) => a.username.localeCompare(b.username)).map((user) => ({ ...user }));
+    },
+    async getById(id) {
+      const users = await loadFixtureUsers();
+      const user = users.find((candidate) => candidate.id === id);
+      return user ? { ...user } : null;
+    },
+    async create(input: SystemUserInput) {
+      const users = await loadFixtureUsers();
+      const username = (input.username ?? '').trim();
+      const wakeId = (input.wakeId ?? '').trim();
+      const employeeNumber = (input.employeeNumber ?? '').trim();
+      const displayName = (input.displayName ?? '').trim();
+      validateUserField('username', username);
+      validateUserField('wakeId', wakeId);
+      validateUserField('employeeNumber', employeeNumber);
+      validateUserField('displayName', displayName);
+      assertNoDuplicateFixtureUser({ username, wakeId, employeeNumber });
+      const now = nowIso();
+      const user: SystemUser = {
+        id: newId(),
+        username,
+        wakeId,
+        employeeNumber,
+        displayName,
+        email: input.email?.trim() || '',
+        roles: [...(input.roles ?? [])],
+        schoolIds: [...(input.schoolIds ?? [])],
+        canViewAllSchools: input.canViewAllSchools ?? false,
+        createdAt: now,
+        updatedAt: now
+      };
+      users.push(user);
+      return { ...user };
+    },
+    async update(id, patch: SystemUserUpdate) {
+      const users = await loadFixtureUsers();
+      const user = users.find((candidate) => candidate.id === id);
+      if (!user) return null;
+      const nextUsername = patch.username !== undefined ? patch.username.trim() : user.username;
+      const nextWakeId = patch.wakeId !== undefined ? patch.wakeId.trim() : user.wakeId;
+      const nextEmployeeNumber =
+        patch.employeeNumber !== undefined ? patch.employeeNumber.trim() : user.employeeNumber;
+      const nextDisplayName = patch.displayName !== undefined ? patch.displayName.trim() : user.displayName;
+      validateUserField('username', nextUsername);
+      validateUserField('wakeId', nextWakeId);
+      validateUserField('employeeNumber', nextEmployeeNumber);
+      validateUserField('displayName', nextDisplayName);
+      assertNoDuplicateFixtureUser(
+        { username: nextUsername, wakeId: nextWakeId, employeeNumber: nextEmployeeNumber },
+        id
+      );
+      user.username = nextUsername;
+      user.wakeId = nextWakeId;
+      user.employeeNumber = nextEmployeeNumber;
+      user.displayName = nextDisplayName;
+      if (patch.email !== undefined) user.email = patch.email?.trim() || '';
+      if (patch.roles !== undefined) user.roles = [...patch.roles];
+      if (patch.schoolIds !== undefined) user.schoolIds = [...patch.schoolIds];
+      if (patch.canViewAllSchools !== undefined) user.canViewAllSchools = patch.canViewAllSchools;
+      user.updatedAt = nowIso();
+      return { ...user };
+    },
+    async delete(id) {
+      const users = await loadFixtureUsers();
+      const idx = users.findIndex((candidate) => candidate.id === id);
+      if (idx === -1) return false;
+      users.splice(idx, 1);
+      return true;
+    }
+  };
+}
+
 // ---- Future Positions (staged new incumbents) ----
 const fixtureFuturePositions: FuturePosition[] = [];
 
@@ -1002,6 +1133,53 @@ function buildFixtureFeatureFlags(): Repositories['featureFlags'] {
       };
       fixtureFeatureFlags.set(key, next);
       return { ...next };
+    }
+  };
+}
+
+// ---- AI Ask History (Recent Searches) ----
+// In-memory per-user store for the fixture repository. Mirrors the persisted
+// ask_history table used by Turso/MySQL.
+const fixtureAiHistory: AiHistoryEntry[] = [];
+
+function buildFixtureAiHistory(): Repositories['aiHistory'] {
+  return {
+    async create(input) {
+      const entry: AiHistoryEntry = {
+        id: newId(),
+        userId: input.userId,
+        question: input.question,
+        answer: input.answer,
+        sql: input.sql,
+        rowCount: input.rowCount,
+        columns: input.columns,
+        rows: input.rows,
+        model: input.model,
+        createdAt: nowIso()
+      };
+      fixtureAiHistory.unshift(entry);
+      return { ...entry, rows: [...entry.rows], columns: [...entry.columns] };
+    },
+    async list(userId, limit = 20) {
+      return fixtureAiHistory
+        .filter((entry) => entry.userId === userId)
+        .slice(0, limit)
+        .map((entry) => ({
+          id: entry.id,
+          question: entry.question,
+          answer: entry.answer,
+          createdAt: entry.createdAt
+        } satisfies AiHistoryListItem));
+    },
+    async getById(id, userId) {
+      const entry = fixtureAiHistory.find((candidate) => candidate.id === id && candidate.userId === userId);
+      return entry ? { ...entry, rows: [...entry.rows], columns: [...entry.columns] } : null;
+    },
+    async delete(id, userId) {
+      const idx = fixtureAiHistory.findIndex((candidate) => candidate.id === id && candidate.userId === userId);
+      if (idx === -1) return false;
+      fixtureAiHistory.splice(idx, 1);
+      return true;
     }
   };
 }

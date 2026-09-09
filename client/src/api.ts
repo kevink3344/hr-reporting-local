@@ -1,5 +1,6 @@
 import type {
   FeatureFlag,
+  FeatureFlagsResponse,
   FuturePosition,
   FuturePositionInput,
   FuturePositionStatus,
@@ -19,7 +20,12 @@ import type {
   School,
   SystemMessage,
   SystemMessageType,
+  SystemUser,
+  SystemUserInput,
   ViewDefinition,
+  AiAnswer,
+  AiHistoryItem,
+  HealthStatus,
 } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -67,6 +73,10 @@ function scopeHeaders(session: LoginSession | null | undefined): Record<string, 
 
 export function getSchools(session?: LoginSession | null): Promise<School[]> {
   return request<School[]>('/api/schools', { headers: scopeHeaders(session) });
+}
+
+export function getHealthStatus(): Promise<HealthStatus> {
+  return request<HealthStatus>('/api/health');
 }
 
 export function getPeople(search: string, schoolId: string, session?: LoginSession | null): Promise<PersonPage> {
@@ -434,9 +444,37 @@ export function deleteSystemMessage(session: LoginSession, id: string): Promise<
   });
 }
 
+// ---- System users (admin account management) ----
+export function getUsers(session: LoginSession): Promise<SystemUser[]> {
+  return request<SystemUser[]>('/api/users', { headers: adminHeaders(session) });
+}
+
+export function createUser(session: LoginSession, input: SystemUserInput): Promise<SystemUser> {
+  return request<SystemUser>('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...adminHeaders(session) },
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateUser(session: LoginSession, id: string, patch: Partial<SystemUserInput>): Promise<SystemUser> {
+  return request<SystemUser>(`/api/users/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...adminHeaders(session) },
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteUser(session: LoginSession, id: string): Promise<void> {
+  return request<void>(`/api/users/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: adminHeaders(session)
+  });
+}
+
 // ---- Feature flags (Settings toggle) ----
-export function getFeatureFlag(session: LoginSession | null | undefined): Promise<FeatureFlag> {
-  return request<FeatureFlag>('/api/feature-flags', { headers: viewHeaders(session) });
+export function getFeatureFlag(session: LoginSession | null | undefined): Promise<FeatureFlagsResponse> {
+  return request<FeatureFlagsResponse>('/api/feature-flags', { headers: viewHeaders(session) });
 }
 
 export function setFeatureFlag(session: LoginSession, key: string, enabled: boolean): Promise<FeatureFlag> {
@@ -444,6 +482,35 @@ export function setFeatureFlag(session: LoginSession, key: string, enabled: bool
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...adminHeaders(session) },
     body: JSON.stringify({ enabled })
+  });
+}
+
+// ---- AI Assistant ----
+// Scoped callers must send their school ids; admins/data_team send view-all.
+function aiHeaders(session: LoginSession | null | undefined): Record<string, string> {
+  return { ...viewHeaders(session), ...scopeHeaders(session) };
+}
+
+export function askAi(session: LoginSession, question: string): Promise<AiAnswer> {
+  return request<AiAnswer>('/api/ai/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...aiHeaders(session) },
+    body: JSON.stringify({ question })
+  });
+}
+
+export function getAiHistory(session: LoginSession | null | undefined): Promise<AiHistoryItem[]> {
+  return request<AiHistoryItem[]>('/api/ai/history', { headers: aiHeaders(session) });
+}
+
+export function getAiHistoryItem(session: LoginSession, id: string): Promise<AiAnswer> {
+  return request<AiAnswer>(`/api/ai/history/${encodeURIComponent(id)}`, { headers: aiHeaders(session) });
+}
+
+export function deleteAiHistoryItem(session: LoginSession, id: string): Promise<void> {
+  return request<void>(`/api/ai/history/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: aiHeaders(session)
   });
 }
 

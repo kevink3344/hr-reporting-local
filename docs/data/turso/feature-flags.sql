@@ -18,3 +18,4 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 );
 
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('future_positions', 0, datetime('now'));
+INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('ai_assistant', 0, datetime('now'));

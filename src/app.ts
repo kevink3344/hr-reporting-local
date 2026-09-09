@@ -12,8 +12,10 @@ const CLIENT_DIST = resolve(MODULE_DIR, '..', 'client', 'dist');
 import { fixtureRepositories } from './repositories/fixture-repository.js';
 import { mysqlRepositories } from './repositories/mysql-repository.js';
 import { tursoRepositories } from './repositories/turso-repository.js';
+import { hybridRepositories } from './repositories/hybrid-repository.js';
 import type { Repositories } from './repositories/contracts.js';
 import { authenticateFixtureUser } from './repositories/fixture-auth.js';
+import { authenticateMysqlUser } from './repositories/mysql-auth.js';
 import { getDataSource } from './config.js';
 import { isDbReady } from './db.js';
 import { isDbReady as isTursoDbReady } from './db-turso.js';
@@ -22,6 +24,8 @@ import { viewDefinitionSchema } from './report-views.js';
 import { reportHighlightRulesSchema } from './report-highlight.js';
 import { validateSubreportSql } from './reports-sql.js';
 import type { School } from './types.js';
+import { isAiConfigured } from './config.js';
+import { ask as aiAsk, listHistory as aiListHistory, getHistory as aiGetHistory, deleteHistory as aiDeleteHistory } from './ai/ai.js';
 
 const querySchema = z.object({
   search: z.string().trim().optional(),
@@ -211,6 +215,13 @@ async function requireFuturePositionsEnabled(repositories: Repositories): Promis
   return { enabled: true };
 }
 
+/** Feature gate for the AI Assistant. Returns null when the flag is off. */
+async function requireAiAssistantEnabled(repositories: Repositories): Promise<{ enabled: boolean } | null> {
+  const flag = await repositories.featureFlags.get('ai_assistant');
+  if (!flag?.enabled) return null;
+  return { enabled: true };
+}
+
 function stripSqlForReader<T extends { sqlQuery?: string; subreportQuery?: string }>(report: T, admin: boolean): T {
   if (admin) return report;
   const { sqlQuery: _omitted, subreportQuery: _omittedSub, ...rest } = report;
@@ -237,7 +248,14 @@ function repoErrorToStatus(error: unknown): { status: number; body: { error: str
     case 'COMMENT_BODY_REQUIRED':
     case 'HIGHLIGHT_RULE_INVALID':
     case 'PIN_REQUIRED':
+    case 'QUESTION_REQUIRED':
+    case 'AI_SQL_REJECTED':
+    case 'AI_SCOPE_REQUIRED':
       return { status: 400, body: { error: code } };
+    case 'AI_NOT_CONFIGURED':
+      return { status: 503, body: { error: code } };
+    case 'AI_UPSTREAM_ERROR':
+      return { status: 502, body: { error: code } };
     case 'SECTION_TITLE_CONFLICT':
     case 'REPORT_TITLE_CONFLICT':
     case 'VIEW_NAME_CONFLICT':
@@ -257,12 +275,18 @@ function repoErrorToStatus(error: unknown): { status: number; body: { error: str
     case 'COMMENT_NOT_FOUND':
     case 'MESSAGE_NOT_FOUND':
     case 'FUTURE_POSITION_NOT_FOUND':
+    case 'AI_HISTORY_NOT_FOUND':
+    case 'FEATURE_NOT_FOUND':
       return { status: 404, body: { error: code } };
     case 'MESSAGE_REQUIRED':
     case 'MESSAGE_TOO_LONG':
+    case 'USER_FIELDS_REQUIRED':
       return { status: 400, body: { error: code } };
     case 'SPLASH_ALREADY_ACTIVE':
+    case 'USER_FIELD_CONFLICT':
       return { status: 409, body: { error: code } };
+    case 'USER_NOT_FOUND':
+      return { status: 404, body: { error: code } };
     default:
       return { status: 500, body: { error: 'INTERNAL_SERVER_ERROR' } };
   }
@@ -289,6 +313,28 @@ const systemMessageSchema = z.object({
 });
 
 const systemMessagePatchSchema = systemMessageSchema.partial();
+
+// ---- System users (admin account management) ----
+// Admin CRUD for accounts in the `users` table. The provided roles/schoolIds
+// arrive as arrays from the client; the repo layer joins them into the CSV
+// columns. Employees that must never be edited (the signed-in admin) are not
+// special-cased here — all are manageable, but attempts to delete self are
+// guarded in the route handler.
+const userCreateSchema = z.object({
+  username: z.string().trim().min(1).max(64),
+  wakeId: z.string().trim().min(1).max(128),
+  employeeNumber: z.string().trim().min(1).max(64),
+  displayName: z.string().trim().min(1).max(255),
+  email: z.string().trim().email().max(255).nullable().optional(),
+  roles: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  schoolIds: z.array(z.string().trim().min(1).max(128)).max(200).optional(),
+  canViewAllSchools: z.boolean().optional()
+});
+
+// NOTE: Partial must NOT inherit defaults. userCreateSchema uses .optional()
+// (not .default()) so that a PATCH that omits roles/schoolIds/canViewAllSchools
+// does NOT clobber those columns back to stale values.
+const userUpdateSchema = userCreateSchema.partial();
 
 const futurePositionSchema = z.object({
   posNumber: z.string().trim().min(1).max(64),
@@ -322,6 +368,10 @@ const featureFlagPatchSchema = z.object({
   enabled: z.boolean()
 });
 
+const aiAskSchema = z.object({
+  question: z.string().trim().min(1).max(2000)
+});
+
 export function createApp(
   repositories: Repositories = fixtureRepositories,
   options?: { serveClient?: boolean }
@@ -332,7 +382,10 @@ export function createApp(
   application.post('/api/auth/login', async (request, response, next) => {
     try {
       const credentials = loginSchema.parse(request.body);
-      const session = await authenticateFixtureUser(credentials.wakeId, credentials.employeeId);
+      const useMysqlAuth = repositories === mysqlRepositories || repositories === hybridRepositories;
+      const session = useMysqlAuth
+        ? await authenticateMysqlUser(credentials.wakeId, credentials.employeeId)
+        : await authenticateFixtureUser(credentials.wakeId, credentials.employeeId);
       if (!session) {
         response.status(401).json({ error: 'INVALID_CREDENTIALS' });
         return;
@@ -350,9 +403,26 @@ export function createApp(
   });
 
   application.get('/api/health', async (_request, response) => {
-    const dataSource = repositories === mysqlRepositories ? 'mysql' : repositories === tursoRepositories ? 'turso' : 'fixtures';
-    const dbReady = dataSource === 'mysql' ? await isDbReady() : dataSource === 'turso' ? await isTursoDbReady() : false;
-    response.json({ ok: true, dataSource, dbReady });
+    const dataSource =
+      repositories === mysqlRepositories
+        ? 'mysql'
+        : repositories === tursoRepositories
+          ? 'turso'
+          : repositories === hybridRepositories
+            ? 'hybrid'
+            : 'fixtures';
+    // Hybrid needs BOTH its MySQL data side AND its Turso config side ready.
+    // Report ready only when they are, so the client's warming banner clears
+    // at the right moment.
+    const dbReady =
+      dataSource === 'mysql'
+        ? await isDbReady()
+        : dataSource === 'turso'
+          ? await isTursoDbReady()
+          : dataSource === 'hybrid'
+            ? (await isDbReady()) && (await isTursoDbReady())
+            : false;
+    response.json({ ok: true, dataSource, dbReady, aiConfigured: isAiConfigured() });
   });
 
   application.get('/api/people', async (request, response, next) => {
@@ -1203,13 +1273,12 @@ export function createApp(
     }
   });
 
-  // ---- Feature flags (Settings toggle) ----
-  // Any authenticated user reads the toggle so the client can hide the UI;
-  // only an admin may change it.
-  application.get('/api/feature-flags', async (_request, response, next) => {
+  // ---- System users (admin account management) ----
+  // Admins can list, create, update, and delete accounts in the `users` table.
+  application.get('/api/users', requireAdmin, async (_request, response, next) => {
     try {
-      const flag = await repositories.featureFlags.get('future_positions');
-      response.json({ key: 'future_positions', enabled: flag?.enabled ?? false });
+      const users = await repositories.users.listAll();
+      response.json(users);
     } catch (error) {
       const mapped = repoErrorToStatus(error);
       if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
@@ -1217,10 +1286,80 @@ export function createApp(
     }
   });
 
-  application.patch('/api/feature-flags/future_positions', requireAdmin, async (request, response, next) => {
+  application.post('/api/users', requireAdmin, async (request, response, next) => {
     try {
+      const input = userCreateSchema.parse(request.body);
+      const created = await repositories.users.create(input);
+      response.status(201).json(created);
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.patch('/api/users/:id', requireAdmin, async (request, response, next) => {
+    try {
+      const id = routeId(request.params.id);
+      const patch = userUpdateSchema.parse(request.body);
+      const updated = await repositories.users.update(id, patch);
+      if (!updated) { response.status(404).json({ error: 'USER_NOT_FOUND' }); return; }
+      response.json(updated);
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.delete('/api/users/:id', requireAdmin, async (request, response, next) => {
+    try {
+      const id = routeId(request.params.id);
+      // Guard against an admin deleting their own account (locks them out).
+      if (id === callerId(request)) {
+        response.status(400).json({ error: 'USER_DELETE_SELF' });
+        return;
+      }
+      const removed = await repositories.users.delete(id);
+      if (!removed) { response.status(404).json({ error: 'USER_NOT_FOUND' }); return; }
+      response.status(204).end();
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  // ---- Feature flags (Settings toggle) ----
+  // Any authenticated user reads the toggle so the client can hide the UI;
+  // only an admin may change it. Returns every known flag so the client can
+  // gate all optional features in one call.
+  application.get('/api/feature-flags', async (_request, response, next) => {
+    try {
+      const [futurePositions, aiAssistant] = await Promise.all([
+        repositories.featureFlags.get('future_positions'),
+        repositories.featureFlags.get('ai_assistant')
+      ]);
+      response.json({
+        future_positions: futurePositions?.enabled ?? false,
+        ai_assistant: aiAssistant?.enabled ?? false
+      });
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.patch('/api/feature-flags/:key', requireAdmin, async (request, response, next) => {
+    try {
+      const key = routeId(request.params.key);
+      if (key !== 'future_positions' && key !== 'ai_assistant') {
+        response.status(404).json({ error: 'FEATURE_NOT_FOUND' });
+        return;
+      }
       const patch = featureFlagPatchSchema.parse(request.body);
-      const flag = await repositories.featureFlags.set('future_positions', patch.enabled, callerId(request));
+      const flag = await repositories.featureFlags.set(key, patch.enabled, callerId(request));
       response.json(flag);
     } catch (error) {
       const mapped = repoErrorToStatus(error);
@@ -1346,6 +1485,73 @@ export function createApp(
     }
   });
 
+  // ---- AI Assistant (natural-language reporting) ----
+  // Gate everything behind the ai_assistant flag. Body (question) is validated.
+  application.post('/api/ai/ask', async (request, response, next) => {
+    try {
+      const gate = await requireAiAssistantEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const { question } = aiAskSchema.parse(request.body);
+      const scoped = !canViewAllSchools(request) && hasSchoolScope(request);
+      const entry = await aiAsk({
+        userId: callerId(request),
+        question,
+        schoolIds: callerSchoolIds(request),
+        scoped,
+        organization: callerSchoolIds(request)[0] ?? null,
+        repositories
+      });
+      response.json(entry);
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.get('/api/ai/history', async (request, response, next) => {
+    try {
+      const gate = await requireAiAssistantEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const history = await aiListHistory(repositories, callerId(request), 20);
+      response.json(history);
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.get('/api/ai/history/:id', async (request, response, next) => {
+    try {
+      const gate = await requireAiAssistantEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const id = routeId(request.params.id);
+      const entry = await aiGetHistory(repositories, id, callerId(request));
+      if (!entry) { response.status(404).json({ error: 'AI_HISTORY_NOT_FOUND' }); return; }
+      response.json(entry);
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.delete('/api/ai/history/:id', async (request, response, next) => {
+    try {
+      const gate = await requireAiAssistantEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const id = routeId(request.params.id);
+      const removed = await aiDeleteHistory(repositories, id, callerId(request));
+      if (!removed) { response.status(404).json({ error: 'AI_HISTORY_NOT_FOUND' }); return; }
+      response.status(204).end();
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
   application.get('/api/docs.json', (_request, response) => {
     response.json(openApiDocument);
   });
@@ -1360,6 +1566,7 @@ export function createApp(
       response.status(400).json({ error: 'VALIDATION_ERROR', details: error.issues });
       return;
     }
+    console.error('[app] unhandled error:', error);
     response.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
   });
 
@@ -1373,7 +1580,14 @@ export const app = createApp();
 // running server can switch to a live/synthetic DB while tests stay on fixtures.
 export function createRuntimeApp(): ReturnType<typeof createApp> {
   const dataSource = getDataSource();
-  const repositories = dataSource === 'mysql' ? mysqlRepositories : dataSource === 'turso' ? tursoRepositories : fixtureRepositories;
+  const repositories =
+    dataSource === 'mysql'
+      ? mysqlRepositories
+      : dataSource === 'turso'
+        ? tursoRepositories
+        : dataSource === 'hybrid'
+          ? hybridRepositories
+          : fixtureRepositories;
   return createApp(repositories, { serveClient: true });
 }
 
