@@ -53,7 +53,9 @@ function SalaryToggleField({ monthly, view, onToggle }: { monthly: number; view:
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
       <span>Proposed salary</span>
-      <strong>{display} <em className="salary-period">{suffix}</em></strong>
+      <strong>{display} <em className="salary-period">{suffix}</em>
+        <svg className="salary-toggle-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
+      </strong>
     </div>
   );
 }
@@ -297,7 +299,7 @@ function EmployeeRecord({
     contract: <><RecordField label="Hire date" value={record.contract.hireDate} /><RecordField label="Continuous date" value={record.contract.continuousDate} /><RecordField label="Last changed" value={record.contract.lastChanged} /><RecordField label="Type" value={record.contract.type} /><RecordField label="Start" value={record.contract.start} /><RecordField label="End" value={record.contract.end} /><RecordField label="Renewal year" value={record.contract.renewalYear} /><RecordField label="Change type" value={record.contract.changeType} /><RecordField label="Board number" value={record.contract.boardNumber} mono /></>,
     licensure: <><RecordField label="Type" value={record.licensure.type} /><RecordField label="Renewal year" value={record.licensure.renewalYear} /><RecordField label="Expires" value={record.licensure.expires} /><div className="record-table-wrap"><table className="record-table"><thead><tr><th>Area</th><th>Description</th><th>Years</th><th>Status</th><th>Code</th></tr></thead><tbody>{record.licensure.areas.map((area) => <tr key={area.code}><td className="mono">{area.area}</td><td>{area.description}</td><td>{area.years}</td><td>{area.status}</td><td className="mono">{area.code}</td></tr>)}</tbody></table></div></>,
     service: <><RecordField label="Years of service" value={record.service.yearsOfService} /><RecordField label="Months of service" value={record.service.monthsOfService} /><RecordField label="Last updated" value={record.service.lastUpdated} /></>,
-    leave: <><div className="record-table-wrap"><table className="record-table leave-table"><thead><tr><th>Leave type</th><th>Carryover</th><th>Accrued</th><th>Used</th><th>Adjustment</th><th>Balance</th><th>Rate</th><th>Updated</th></tr></thead><tbody>{record.leaveBalances.map((leave) => <tr key={leave.leaveType}><td>{leave.leaveType}</td><td>{leave.carryover}</td><td>{leave.accrued}</td><td>{leave.used}</td><td>{leave.adjustment}</td><td><strong>{leave.balance}</strong></td><td>{leave.accrualRate}</td><td>{leave.lastUpdated}</td></tr>)}</tbody></table></div></>,
+    leave: <><div className="record-table-wrap"><table className="record-table leave-table"><thead><tr><th>Leave type</th><th>Carryover</th><th>Accrued</th><th>Used</th><th>Adjustment</th><th>Balance</th><th>Rate</th><th>Updated</th></tr></thead><tbody>{record.leaveBalances.length === 0 ? <tr><td colSpan={8} className="record-table-empty">No leave balances found.</td></tr> : record.leaveBalances.map((leave) => <tr key={leave.leaveType}><td>{leave.leaveType}</td><td>{leave.carryover}</td><td>{leave.accrued}</td><td>{leave.used}</td><td>{leave.adjustment}</td><td><strong>{leave.balance}</strong></td><td>{leave.accrualRate}</td><td>{leave.lastUpdated}</td></tr>)}</tbody></table></div></>,
   };
 
   const tones: Partial<Record<RecordSectionId, string>> = { leave: 'leave-section' };
