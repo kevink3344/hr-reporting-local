@@ -109,6 +109,20 @@ function fitColumnShort(column: string): string {
     .join(' ');
 }
 
+// Columns that carry a full ISO timestamp (e.g. "1951-01-01T05:00:00.000Z")
+// but should display as a date only (e.g. "1951-01-01"). We cut at the "T"
+// rather than going through a Date object so the day never shifts due to the
+// local timezone offset.
+const DATE_ONLY_COLUMNS = new Set(['pos_start', 'pos_ending']);
+
+function formatCellValue(column: string, value: string): string {
+  if (DATE_ONLY_COLUMNS.has(column)) {
+    const dateOnly = value.split('T')[0];
+    return dateOnly || value;
+  }
+  return value;
+}
+
 function GenericReportView({
   result,
   session,
@@ -757,7 +771,8 @@ function GenericReportView({
                       onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenRecord!(empNo); } } : undefined}
                     >
                       {displayColumns.map((column) => {
-                        const cellValue = record[column] === null || record[column] === undefined ? '' : String(record[column]);
+                        const rawValue = record[column] === null || record[column] === undefined ? '' : String(record[column]);
+                        const cellValue = formatCellValue(column, rawValue);
                         const posNo = getPosNumber(record);
                         const isPosition = isPositionColumn(column) && Boolean(posNo) && Boolean(onOpenPosition);
                         const isPerson = isPersonColumn(column) && Boolean(empNo) && Boolean(onOpenRecord);
