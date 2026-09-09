@@ -75,6 +75,19 @@ function draftStorageKey(reportId: string, organization: string): string {
   return `hr-report-view-draft:${reportId}:${organization}`;
 }
 
+// When "fit to width" is active, column titles are compressed to a compact
+// short label so every column can fit in the viewport. If a name has no
+// underscore, take the first 3 characters ("MONTH" → "MON"). If it has an
+// underscore, take the first 2 characters before the underscore plus the first
+// character after it ("POS_NAME" → "PON", "A_MONTHS" → "AM").
+function fitColumnShort(column: string): string {
+  const underscoreIdx = column.indexOf('_');
+  if (underscoreIdx === -1) return column.slice(0, 3);
+  const before = column.slice(0, underscoreIdx).slice(0, 2);
+  const after = column.charAt(underscoreIdx + 1);
+  return before + after;
+}
+
 function GenericReportView({
   result,
   session,
@@ -694,7 +707,7 @@ function GenericReportView({
                     title="Click to sort"
                     className="report-th-clickable"
                   >
-                    {column}
+                    {draft.fitWidth ? fitColumnShort(column) : column}
                     <svg className="report-th-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
                   </th>
                 ))}
