@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, GripVertical, Home, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, UserPlus, Users, X } from 'lucide-react';
-import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getSystemMessages, login, sendNowFuturePosition, updateFuturePosition } from './api';
+import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, GripVertical, Home, ListPlus, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
+import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
 import type { FuturePosition, FuturePositionStatus, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
 import { FuturePositionsPage } from './FuturePositionsPage';
@@ -30,6 +30,20 @@ function toDateInput(value: string | null | undefined): string {
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
 }
 
+// employee_info.tap is stored as a 0-1 fraction of a full-time assignment
+// (1 === 100%), the same convention the report SQL uses via round(tap * 100)
+// and the Employee Record uses via tapPercent. Render it as a percentage so a
+// stored 1 reads "100%". Part-time assignments keep two decimals ("54.55%")
+// while whole percentages stay clean ("100%", "50%"). Unparseable input is
+// passed through untouched.
+function formatTap(value: string | null | undefined): string {
+  if (value === null || value === undefined || value.trim() === '') return '';
+  const fraction = Number(value);
+  if (!Number.isFinite(fraction)) return value;
+  const percent = Math.round(fraction * 100 * 100) / 100;
+  return `${Number.isInteger(percent) ? percent : percent.toFixed(2)}%`;
+}
+
 function RecordField({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return <div className="record-field"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value || 'Not provided'}</strong></div>;
 }
@@ -57,50 +71,6 @@ function SalaryToggleField({ monthly, view, onToggle }: { monthly: number; view:
         <svg className="salary-toggle-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
       </strong>
     </div>
-  );
-}
-
-// Green doughnut countdown shown next to the "Incumbent" title while a staged
-// future incumbent is still editable (pending). The ring starts full and drains
-// clockwise over the one-hour window that began at creation; once the hour is up
-// the server auto-locks the record and the countdown disappears.
-function FutureCountdown({ createdAt }: { createdAt: string }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  // createdAt is a UTC "YYYY-MM-DD HH:MM:SS" string (turso datetime('now') /
-  // nowIso). Normalize to a real UTC timestamp so the deadline is correct
-  // regardless of the browser timezone.
-  const createdMs = new Date(createdAt.replace(' ', 'T') + 'Z').getTime();
-  const total = 60 * 60 * 1000; // one hour
-  const remaining = createdMs ? Math.max(0, createdMs + total - now) : 0;
-  if (!createdMs || remaining <= 0) return null;
-  const fraction = remaining / total;
-  // Draw a filled pie wedge (sector) starting from 12 o'clock, sweeping
-  // clockwise. The pie shrinks as the one-hour window drains.
-  const cx = 8;
-  const cy = 8;
-  const r = 7;
-  const start = -Math.PI / 2; // 12 o'clock
-  const end = start + fraction * 2 * Math.PI;
-  const x1 = cx + r * Math.cos(start);
-  const y1 = cy + r * Math.sin(start);
-  const x2 = cx + r * Math.cos(end);
-  const y2 = cy + r * Math.sin(end);
-  const largeArc = fraction > 0.5 ? 1 : 0;
-  const pie = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-  const minutes = Math.floor(remaining / 60000);
-  const seconds = Math.floor((remaining % 60000) / 1000);
-  return (
-    <span className="future-countdown" title="Time left to edit this future incumbent" role="timer" aria-label={`${minutes} minutes ${seconds} seconds left to edit`}>
-      <svg className="future-countdown-pie" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-        <circle className="future-countdown-bg" cx={cx} cy={cy} r={r} />
-        <path className="future-countdown-fg" d={pie} />
-      </svg>
-      <span className="future-countdown-label">{minutes}:{seconds.toString().padStart(2, '0')}</span>
-    </span>
   );
 }
 
@@ -436,9 +406,10 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
     setFuturePanelOpen(true);
   }
 
-  // Reopen the pending record in the form so it can be edited within the 1-hour window.
+  // Reopen an editable record in the form. Locked records must be unlocked back
+  // to pending first, so editing stays a pending-only operation.
   function editFuture() {
-    if (future?.status === 'locked') { showToast('Record is currently locked and cannot be edited'); return; }
+    if (future?.status === 'locked') { showToast('Record is locked. Click Unlock to edit it.'); return; }
     if (!future) return;
     setFutureError('');
     setFutureNotice('');
@@ -460,9 +431,18 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
     setFuturePanelOpen(true);
   }
 
+  // Placeholder for the upcoming queue screen: staff will be able to group
+  // several pending future positions and release them together. The button is
+  // present now so the workflow is discoverable; the queue itself is not wired
+  // up yet, so this only acknowledges the click.
+  function queueFuture() {
+    if (!future) return;
+    showToast('“Add to queue” is coming soon — this record is still Pending.');
+  }
+
   async function sendNow() {
     if (!session || !future || futureSaving) return;
-    if (future.status === 'locked') { showToast('Record is currently locked and cannot be edited'); return; }
+    if (future.status === 'locked') { showToast('Record is locked. Click Unlock to edit it.'); return; }
     setFutureSaving(true);
     setFutureError('');
     setFutureNotice('');
@@ -472,6 +452,38 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
       setFutureNotice('Record sent to the data team for review.');
     } catch (failure) {
       setFutureError(failure instanceof Error && failure.message.startsWith('HTTP_') ? 'The record could not be updated.' : (failure instanceof Error ? failure.message : 'The record could not be updated.'));
+    } finally {
+      setFutureSaving(false);
+    }
+  }
+
+  // Return a locked record to Pending so staff can edit it again. Completed
+  // records are terminal and deliberately cannot be unlocked.
+  async function unlockFuture() {
+    if (!session || !future || futureSaving) return;
+    if (future.status === 'completed') { showToast('This record is completed and can no longer be unlocked'); return; }
+    setFutureSaving(true);
+    setFutureError('');
+    setFutureNotice('');
+    try {
+      const updated = await unlockFuturePosition(session, future.id);
+      setFuture(updated);
+      setFutureNotice('Record unlocked and set back to Pending.');
+    } catch (failure) {
+      const code = failure instanceof Error ? failure.message : '';
+      if (code.startsWith('HTTP_')) {
+        setFutureError('The record could not be unlocked.');
+      } else if (code === 'FUTURE_POSITION_COMPLETED') {
+        setFutureError('This record is completed and can no longer be unlocked.');
+      } else if (code === 'FUTURE_POSITION_NOT_LOCKED') {
+        setFutureError('Only a locked record can be unlocked.');
+      } else if (code === 'FUTURE_POSITION_NOT_FOUND') {
+        setFutureError('The record no longer exists.');
+      } else if (code === 'FEATURE_DISABLED') {
+        setFutureError('Future Positions is currently disabled.');
+      } else {
+        setFutureError(code || 'The record could not be unlocked.');
+      }
     } finally {
       setFutureSaving(false);
     }
@@ -503,7 +515,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
       setFuture(saved);
       setFuturePanelOpen(false);
       setEditingFutureId(null);
-      setFutureNotice(wasEditing ? 'Record updated. You can keep editing for the rest of the hour.' : 'Record saved as Pending. You have one hour to modify it, or click \'Send Now\'.');
+      setFutureNotice(wasEditing ? 'Record updated.' : 'Record saved as Pending. Click \'Send Now\' when you are ready to submit it for review.');
       resetFutureForm();
     } catch (failure) {
       setFutureError(failure instanceof Error && failure.message.startsWith('HTTP_') ? 'The record could not be saved.' : (failure instanceof Error ? failure.message : 'The record could not be saved.'));
@@ -560,7 +572,6 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
         </div>
         <div className="position-incumbent-title">
           <h4 className="record-section-title">Incumbent</h4>
-          {futureEnabled && future?.status === 'pending' && <FutureCountdown createdAt={future.createdAt} />}
         </div>
         <div className="position-incumbent-tabs" role="tablist" aria-label="Incumbent sections">
           <button role="tab" aria-selected={incumbentTab === 'current'} className={`position-incumbent-tab ${incumbentTab === 'current' ? 'active' : ''}`} onClick={() => setIncumbentTab('current')}>
@@ -580,7 +591,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                   </button>
                 )}
                 <button className="icon-button icon-button--bare" onClick={() => {
-                  if (future?.status === 'locked') { showToast('Record is currently locked and cannot be edited'); return; }
+                  if (future?.status === 'locked') { showToast('Record is locked. Click Unlock to edit it.'); return; }
                   if (future?.status === 'pending') { editFuture(); return; }
                   setEditingFutureId(null);
                   setIncumbentTab('future'); setFuturePanelOpen((open) => !open); setFutureError(''); setFutureNotice('');
@@ -600,7 +611,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
               <RecordField label="Contract ID" value={incumbent.contractId} mono />
               <RecordField label="Contract start" value={incumbent.contractStart} />
               <RecordField label="Contract end" value={incumbent.contractEnd} />
-              <RecordField label="TAP" value={incumbent.tap} />
+              <RecordField label="TAP" value={formatTap(incumbent.tap)} />
               <RecordField label="Months" value={incumbent.months} />
               <RecordField label="Classroom" value={incumbent.classroom} />
               <RecordField label="Mail stop" value={incumbent.mailstop} mono />
@@ -620,9 +631,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                   <>
                     {future && future.status !== 'completed' && (
                       <div className="future-position-detail-head">
-                        <span className={`status-pill status-pill--${future.status}`}>{future.status}</span>
                         <strong className="future-position-detail-name">{future.incumbentName || 'Not provided'}</strong>
-                        {future.status === 'pending' && <span className="future-position-existing-hint">You can edit this for one hour.</span>}
                         {future.status === 'locked' && <span className="future-position-existing-hint">Locked pending data team review.</span>}
                       </div>
                     )}
@@ -695,9 +704,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                 {futureLoading ? <div className="empty-state"><span className="loader" />Loading existing record</div> : future ? (
                   <>
                     <div className="future-position-detail-head">
-                      <span className={`status-pill status-pill--${future.status}`}>{future.status}</span>
                       <strong className="future-position-detail-name">{future.incumbentName || 'Not provided'}</strong>
-                      {future.status === 'pending' && <span className="future-position-existing-hint">You can edit this for one hour.</span>}
                       {future.status === 'locked' && <span className="future-position-existing-hint">Locked pending data team review.</span>}
                       {future.status === 'completed' && <span className="future-position-existing-hint">This replacement has been completed.</span>}
                     </div>
@@ -718,7 +725,13 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                     {future.status === 'pending' && submitterId !== null && submitterId === future.submittedBy && (
                       <div className="future-position-card-actions">
                         <button className="back-button" disabled={futureSaving} onClick={editFuture}><Pencil size={14} />Edit</button>
+                        <button className="back-button" disabled={futureSaving} onClick={queueFuture}><ListPlus size={14} />Add to queue</button>
                         <button className="export-button" disabled={futureSaving} onClick={() => void sendNow()}><Send size={14} />Send now</button>
+                      </div>
+                    )}
+                    {future.status === 'locked' && session && (
+                      <div className="future-position-card-actions">
+                        <button className="back-button" disabled={futureSaving} onClick={() => void unlockFuture()}><Unlock size={14} />Unlock</button>
                       </div>
                     )}
                   </>

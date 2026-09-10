@@ -670,7 +670,7 @@ function FeaturesTab({ session }: { session: LoginSession }) {
   return <div className="settings-panel">
     <div className="settings-section">
       <h3 className="settings-section-title"><Flag size={16} />Future Positions (Beta)</h3>
-      <p className="settings-section-desc">When enabled, staff can stage a new incumbent directly from a position's detail page. The record stays <strong>pending</strong> for one hour before locking, then the data team reviews it and marks it <strong>completed</strong>.</p>
+      <p className="settings-section-desc">When enabled, staff can stage a new incumbent directly from a position's detail page. The record stays <strong>pending</strong> until it is sent for review, then the data team reviews it and marks it <strong>completed</strong>.</p>
       <label className="toggle-row">
         <span className="toggle-row-label">Enable Future Positions</span>
         <span className="toggle-label">{futureEnabled ? 'On' : 'Off'}</span>

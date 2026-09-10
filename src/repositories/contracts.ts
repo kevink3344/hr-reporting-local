@@ -317,10 +317,10 @@ export interface FuturePositionsRepository {
   update(id: string, patch: FuturePositionUpdate, callerId: string): Promise<FuturePosition | null>;
   /** pending -> locked ("Send now"). */
   sendNow(id: string, callerId: string): Promise<FuturePosition | null>;
+  /** locked -> pending ("Unlock"). Re-opens a staged record so it can be edited again. */
+  unlock(id: string, callerId: string): Promise<FuturePosition | null>;
   /** locked (or completed idempotently) -> completed. */
   complete(id: string, callerId: string): Promise<FuturePosition | null>;
-  /** Auto-lock any pending row older than 1 hour. Idempotent; run before reads/writes. */
-  autoLockPending(): Promise<void>;
 }
 
 export type FeatureFlag = {

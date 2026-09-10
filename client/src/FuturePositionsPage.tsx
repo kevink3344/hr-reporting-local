@@ -19,7 +19,8 @@ function errorMessage(failure: unknown, fallback: string): string {
       case 'FORBIDDEN': return 'Data team access is required.';
       case 'FEATURE_DISABLED': return 'Future Positions is currently disabled.';
       case 'FUTURE_POSITION_NOT_FOUND': return 'The record no longer exists.';
-      case 'FUTURE_POSITION_NOT_LOCKED': return 'This record is not locked yet. It can only be completed after the one-hour review window closes.';
+      case 'FUTURE_POSITION_NOT_LOCKED': return 'This record cannot be completed from its current status.';
+      case 'FUTURE_POSITION_COMPLETED': return 'This record is already completed.';
       default: return failure.message.startsWith('HTTP_') ? fallback : failure.message;
     }
   }
@@ -105,7 +106,7 @@ export function FuturePositionsPage({
       <div>
         <p className="eyebrow">Data team</p>
         <h2 id="future-title">Future Positions (Beta).</h2>
-        <p className="reports-intro">Review staged incumbents as they are submitted. Pending records can be edited by staff for one hour; locked records are ready for your review. Complete a record once it is verified.</p>
+        <p className="reports-intro">Review staged incumbents as they are submitted. Pending records can still be edited; locked records are ready for your review. Complete a record once it is verified.</p>
       </div>
     </div>
 

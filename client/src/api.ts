@@ -570,6 +570,14 @@ export function sendNowFuturePosition(session: LoginSession, id: string): Promis
   });
 }
 
+// Reverse of send-now: returns a locked record to 'pending' so it can be edited.
+export function unlockFuturePosition(session: LoginSession, id: string): Promise<FuturePosition> {
+  return request<FuturePosition>(`/api/future-positions/${encodeURIComponent(id)}/unlock`, {
+    method: 'POST',
+    headers: viewHeaders(session)
+  });
+}
+
 export function completeFuturePosition(session: LoginSession, id: string): Promise<FuturePosition> {
   return request<FuturePosition>(`/api/future-positions/${encodeURIComponent(id)}/complete`, {
     method: 'POST',

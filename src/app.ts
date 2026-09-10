@@ -265,6 +265,7 @@ function repoErrorToStatus(error: unknown): { status: number; body: { error: str
     case 'FUTURE_POSITION_EXISTS':
     case 'FUTURE_POSITION_LOCKED':
     case 'FUTURE_POSITION_NOT_LOCKED':
+    case 'FUTURE_POSITION_COMPLETED':
       return { status: 409, body: { error: code } };
     case 'FORBIDDEN':
       return { status: 403, body: { error: code } };
@@ -1375,7 +1376,6 @@ export function createApp(
     try {
       const gate = await requireFuturePositionsEnabled(repositories);
       if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
-      await repositories.futurePositions.autoLockPending();
       const query = futurePositionListQuerySchema.parse(request.query);
       const items = await repositories.futurePositions.list({
         posNumber: query.posNumber,
@@ -1394,7 +1394,6 @@ export function createApp(
     try {
       const gate = await requireFuturePositionsEnabled(repositories);
       if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
-      await repositories.futurePositions.autoLockPending();
       const posNumber = routeId(request.params.posNumber);
       const organization = typeof request.query.organization === 'string' ? request.query.organization.trim() : '';
       const item = await repositories.futurePositions.getForPosition(posNumber, organization);
@@ -1410,7 +1409,6 @@ export function createApp(
     try {
       const gate = await requireFuturePositionsEnabled(repositories);
       if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
-      await repositories.futurePositions.autoLockPending();
       const posNumber = routeId(request.params.posNumber);
       const input = futurePositionCreateSchema.parse(request.body);
       const created = await repositories.futurePositions.create({
@@ -1461,6 +1459,23 @@ export function createApp(
       if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
       const id = routeId(request.params.id);
       const updated = await repositories.futurePositions.sendNow(id, callerId(request));
+      if (!updated) { response.status(404).json({ error: 'FUTURE_POSITION_NOT_FOUND' }); return; }
+      response.json(updated);
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  // Reverse of send-now: put a locked record back into 'pending' so it can be
+  // edited again. Open to any signed-in staff member (no ownership check).
+  application.post('/api/future-positions/:id/unlock', async (request, response, next) => {
+    try {
+      const gate = await requireFuturePositionsEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const id = routeId(request.params.id);
+      const updated = await repositories.futurePositions.unlock(id, callerId(request));
       if (!updated) { response.status(404).json({ error: 'FUTURE_POSITION_NOT_FOUND' }); return; }
       response.json(updated);
     } catch (error) {

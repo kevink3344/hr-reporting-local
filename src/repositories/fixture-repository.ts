@@ -65,7 +65,8 @@ const fixtureOpenPositions: OpenPositionRow[] = [
     organization: 'Test Oak Elementary', accountNumber: '01-5410-005-114-0109',
     monthsAvailable: 10, monthsUsed: 8,
     fullName: 'Example, Alex', employeeNumber: '900001', classroom: 'Room 111', mailstop: 'MS-11',
-    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: 'MEd', nbptsExpire: '2030-06-30'
+    // tap mirrors live employee_info: a 0-1 fraction, so 1 === 100%.
+    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '1', degree: 'MEd', nbptsExpire: '2030-06-30'
   },
   {
     posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1002', posName: 'Assistant Principal',
@@ -79,14 +80,14 @@ const fixtureOpenPositions: OpenPositionRow[] = [
     organization: 'Test Oak Elementary', accountNumber: '01-5410-005-114-0122',
     monthsAvailable: 12, monthsUsed: 12,
     fullName: 'Sample, Jordan', employeeNumber: '900002', classroom: 'Room 112', mailstop: 'MS-12',
-    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: 'EdD', nbptsExpire: ''
+    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '1', degree: 'EdD', nbptsExpire: ''
   },
   {
     posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1004', posName: 'Teacher',
     organization: 'Test River High', accountNumber: '01-5410-005-114-0135',
     monthsAvailable: 10, monthsUsed: 10,
     fullName: 'Smith, Riley', employeeNumber: '900006', classroom: 'Room 116', mailstop: 'MS-16',
-    tenureCode: 'T Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: '', nbptsExpire: ''
+    tenureCode: 'T Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '1', degree: '', nbptsExpire: ''
   }
 ];
 
@@ -1087,6 +1088,20 @@ function buildFixtureFuturePositions(): Repositories['futurePositions'] {
       item.updatedAt = now;
       return { ...item };
     },
+    async unlock(id) {
+      const item = fixtureFuturePositions.find((candidate) => candidate.id === id);
+      if (!item) return null;
+      // Already pending: nothing to do, return current state.
+      if (item.status === 'pending') return { ...item };
+      // A completed record is terminal — the cycle is closed and it must not be
+      // reopened, so reject with a distinct code the client can explain.
+      if (item.status === 'completed') throw Object.assign(new Error('FUTURE_POSITION_COMPLETED'), { code: 'FUTURE_POSITION_COMPLETED' });
+      const now = nowIso();
+      item.status = 'pending';
+      item.lockedAt = null;
+      item.updatedAt = now;
+      return { ...item };
+    },
     async complete(id, callerId) {
       const item = fixtureFuturePositions.find((candidate) => candidate.id === id);
       if (!item) return null;
@@ -1097,18 +1112,6 @@ function buildFixtureFuturePositions(): Repositories['futurePositions'] {
       item.completedAt = now;
       item.updatedAt = now;
       return { ...item };
-    },
-    async autoLockPending() {
-      // Auto-lock any pending row older than 1 hour (deadline = created_at + 1h).
-      const cutoff = Date.now() - 60 * 60 * 1000;
-      for (const item of fixtureFuturePositions) {
-        const createdAtMs = new Date(item.createdAt).getTime();
-        if (item.status === 'pending' && createdAtMs <= cutoff) {
-          item.status = 'locked';
-          item.lockedAt = nowIso();
-          item.updatedAt = nowIso();
-        }
-      }
     }
   };
 }

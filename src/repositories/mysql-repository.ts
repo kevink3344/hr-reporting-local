@@ -1665,6 +1665,22 @@ export const mysqlRepositories: Repositories = {
       const updated = await query<FuturePositionRow>('SELECT * FROM future_positions WHERE id = ? LIMIT 1', [id]);
       return toFuturePosition(updated[0]);
     },
+    async unlock(id) {
+      const existing = await query<FuturePositionRow>('SELECT * FROM future_positions WHERE id = ? LIMIT 1', [id]);
+      if (!existing[0]) return null;
+      const row = existing[0];
+      // Already pending: nothing to do, return current state.
+      if (row.status === 'pending') return toFuturePosition(row);
+      // A completed record is terminal — the cycle is closed and it must not be
+      // reopened, so reject with a distinct code the client can explain.
+      if (row.status === 'completed') throw codedError('FUTURE_POSITION_COMPLETED');
+      const now = nowIso();
+      await query(
+        "UPDATE future_positions SET status = 'pending', locked_at = NULL, updated_at = ? WHERE id = ?",
+        [now, id]
+      );
+      return toFuturePosition({ ...row, status: 'pending', locked_at: null, updated_at: now });
+    },
     async complete(id, callerId) {
       const existing = await query<FuturePositionRow>('SELECT * FROM future_positions WHERE id = ? LIMIT 1', [id]);
       if (!existing[0]) return null;
@@ -1678,13 +1694,6 @@ export const mysqlRepositories: Repositories = {
       );
       const updated = await query<FuturePositionRow>('SELECT * FROM future_positions WHERE id = ? LIMIT 1', [id]);
       return toFuturePosition(updated[0]);
-    },
-    async autoLockPending() {
-      // Auto-lock any pending row older than 1 hour.
-      await query(
-        `UPDATE future_positions SET status = 'locked', locked_at = updated_at, updated_at = NOW()
-         WHERE status = 'pending' AND TIMESTAMPDIFF(HOUR, created_at, NOW()) > 1`
-      );
     }
   },
   featureFlags: {
