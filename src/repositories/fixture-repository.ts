@@ -65,8 +65,7 @@ const fixtureOpenPositions: OpenPositionRow[] = [
     organization: 'Test Oak Elementary', accountNumber: '01-5410-005-114-0109',
     monthsAvailable: 10, monthsUsed: 8,
     fullName: 'Example, Alex', employeeNumber: '900001', classroom: 'Room 111', mailstop: 'MS-11',
-    // tap mirrors live employee_info: a 0-1 fraction, so 1 === 100%.
-    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '1', degree: 'MEd', nbptsExpire: '2030-06-30'
+    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: 'MEd', nbptsExpire: '2030-06-30'
   },
   {
     posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1002', posName: 'Assistant Principal',
@@ -80,14 +79,14 @@ const fixtureOpenPositions: OpenPositionRow[] = [
     organization: 'Test Oak Elementary', accountNumber: '01-5410-005-114-0122',
     monthsAvailable: 12, monthsUsed: 12,
     fullName: 'Sample, Jordan', employeeNumber: '900002', classroom: 'Room 112', mailstop: 'MS-12',
-    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '1', degree: 'EdD', nbptsExpire: ''
+    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: 'EdD', nbptsExpire: ''
   },
   {
     posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1004', posName: 'Teacher',
     organization: 'Test River High', accountNumber: '01-5410-005-114-0135',
     monthsAvailable: 10, monthsUsed: 10,
     fullName: 'Smith, Riley', employeeNumber: '900006', classroom: 'Room 116', mailstop: 'MS-16',
-    tenureCode: 'T Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '1', degree: '', nbptsExpire: ''
+    tenureCode: 'T Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: '', nbptsExpire: ''
   }
 ];
 

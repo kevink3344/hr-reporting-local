@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, GripVertical, Home, ListPlus, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, GripVertical, Home, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
 import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
 import type { FuturePosition, FuturePositionStatus, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
@@ -14,7 +14,7 @@ import type { RecordLayout, RecordSectionId } from './recordLayout';
 import { DEFAULT_SECTION_COLORS, SECTION_COLOR_OPTIONS, clearSectionColor, loadSectionColors, saveSectionColor, sectionHeaderColor } from './sectionColors';
 import { loadHomePage, saveHomePage } from './homePage';
 import type { HomePage } from './homePage';
-import { addRecentPerson, loadRecentPeople } from './recentPeople';
+import { addRecentPerson, clearRecentPeople, loadRecentPeople, removeRecentPerson } from './recentPeople';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
@@ -28,20 +28,6 @@ function toDateInput(value: string | null | undefined): string {
   if (Number.isNaN(parsed.getTime())) return '';
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
-}
-
-// employee_info.tap is stored as a 0-1 fraction of a full-time assignment
-// (1 === 100%), the same convention the report SQL uses via round(tap * 100)
-// and the Employee Record uses via tapPercent. Render it as a percentage so a
-// stored 1 reads "100%". Part-time assignments keep two decimals ("54.55%")
-// while whole percentages stay clean ("100%", "50%"). Unparseable input is
-// passed through untouched.
-function formatTap(value: string | null | undefined): string {
-  if (value === null || value === undefined || value.trim() === '') return '';
-  const fraction = Number(value);
-  if (!Number.isFinite(fraction)) return value;
-  const percent = Math.round(fraction * 100 * 100) / 100;
-  return `${Number.isInteger(percent) ? percent : percent.toFixed(2)}%`;
 }
 
 function RecordField({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
@@ -431,15 +417,6 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
     setFuturePanelOpen(true);
   }
 
-  // Placeholder for the upcoming queue screen: staff will be able to group
-  // several pending future positions and release them together. The button is
-  // present now so the workflow is discoverable; the queue itself is not wired
-  // up yet, so this only acknowledges the click.
-  function queueFuture() {
-    if (!future) return;
-    showToast('“Add to queue” is coming soon — this record is still Pending.');
-  }
-
   async function sendNow() {
     if (!session || !future || futureSaving) return;
     if (future.status === 'locked') { showToast('Record is locked. Click Unlock to edit it.'); return; }
@@ -611,7 +588,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
               <RecordField label="Contract ID" value={incumbent.contractId} mono />
               <RecordField label="Contract start" value={incumbent.contractStart} />
               <RecordField label="Contract end" value={incumbent.contractEnd} />
-              <RecordField label="TAP" value={formatTap(incumbent.tap)} />
+              <RecordField label="TAP" value={incumbent.tap} />
               <RecordField label="Months" value={incumbent.months} />
               <RecordField label="Classroom" value={incumbent.classroom} />
               <RecordField label="Mail stop" value={incumbent.mailstop} mono />
@@ -725,7 +702,6 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
                     {future.status === 'pending' && submitterId !== null && submitterId === future.submittedBy && (
                       <div className="future-position-card-actions">
                         <button className="back-button" disabled={futureSaving} onClick={editFuture}><Pencil size={14} />Edit</button>
-                        <button className="back-button" disabled={futureSaving} onClick={queueFuture}><ListPlus size={14} />Add to queue</button>
                         <button className="export-button" disabled={futureSaving} onClick={() => void sendNow()}><Send size={14} />Send now</button>
                       </div>
                     )}
@@ -1320,6 +1296,21 @@ export function App() {
     setPeople(recent);
   }
 
+  // Remove one person from the recent-searches list (only shown while the
+  // directory is displaying recents, not live search results).
+  function removeRecent(person: Person) {
+    const next = removeRecentPerson(session?.user.id ?? null, person.personId);
+    setRecentPeople(next);
+    if (!hasSearched) setPeople(next);
+  }
+
+  // Wipe the entire recent-searches list.
+  function clearAllRecent() {
+    const next = clearRecentPeople(session?.user.id ?? null);
+    setRecentPeople(next);
+    if (!hasSearched) setPeople(next);
+  }
+
   // Compute which system-wide announcements are visible for the current user.
   // Banners: active, not dismissed, newest first, capped at MAX_ACTIVE_BANNERS.
   const baseBannerKey = (message: SystemMessage) => bannerStorageKey(message.id, message.updatedAt);
@@ -1415,7 +1406,10 @@ export function App() {
               <p className="eyebrow">Directory</p>
               <h3>People lookup</h3>
             </div>
-            <span className="result-count">{people.length} {hasSearched ? 'results' : 'recent'}</span>
+            <div className="panel-heading-actions">
+              <span className="result-count">{people.length} {hasSearched ? 'results' : 'recent'}</span>
+              {!hasSearched && people.length > 0 && <button type="button" className="link-button" onClick={clearAllRecent}>Clear all</button>}
+            </div>
           </div>
 
           <div className="search-row">
@@ -1441,11 +1435,14 @@ export function App() {
           {loading ? <div className="empty-state"><span className="loader" />Loading directory</div> : people.length === 0 ? <div className="empty-state">{hasSearched ? 'No people match the current filters.' : 'No recent searches.'}</div> : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Person</th><th>Organization</th><th>Position</th><th>Employee no.</th><th><span className="sr-only">Open</span></th></tr></thead>
+                <thead><tr><th>Person</th><th>Organization</th><th>Position</th><th>Employee no.</th><th><span className="sr-only">Open</span></th>{!hasSearched && <th className="recent-actions-col"><span className="sr-only">Remove</span></th>}</tr></thead>
                 <tbody>{people.map((person) => <tr key={person.personId} className={selectedPerson?.personId === person.personId ? 'selected' : ''} onClick={() => void selectPerson(person)}>
                   <td><strong>{person.fullName}</strong><span>{person.email}</span></td>
                   <td>{person.organization}</td><td>{person.positionName}</td><td className="mono">{person.employeeNumber}</td>
                   <td><ArrowUpRight size={17} aria-hidden="true" /></td>
+                  {!hasSearched && <td className="recent-actions-col">
+                    <button type="button" className="field-clear" aria-label={`Remove ${person.fullName} from recent searches`} title="Remove from recent searches" onClick={(event) => { event.stopPropagation(); removeRecent(person); }}><X size={15} /></button>
+                  </td>}
                 </tr>)}</tbody>
               </table>
             </div>

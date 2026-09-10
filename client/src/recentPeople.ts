@@ -52,3 +52,14 @@ export function addRecentPerson(userId: string | null, person: Person): Person[]
   const next = [person, ...current.filter((p) => p.personId !== person.personId)];
   return saveRecentPeople(userId, next);
 }
+
+/** Remove a single person from the recent-searches list. */
+export function removeRecentPerson(userId: string | null, personId: string): Person[] {
+  const current = loadRecentPeople(userId);
+  return saveRecentPeople(userId, current.filter((p) => p.personId !== personId));
+}
+
+/** Clear the entire recent-searches list for a user. */
+export function clearRecentPeople(userId: string | null): Person[] {
+  return saveRecentPeople(userId, []);
+}
