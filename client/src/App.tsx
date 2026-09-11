@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, Flag, GripVertical, Home, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
-import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
-import type { FuturePosition, FuturePositionStatus, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
+import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, Clock, Copy, Eye, EyeOff, FileText, Flag, GripVertical, Home, Lock, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
+import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getDirectory, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
+import type { DirectoryPositionResult, DirectoryResult, FuturePosition, FuturePositionStatus, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
 import { FuturePositionsPage } from './FuturePositionsPage';
 import { ReportsPage } from './ReportsPage';
@@ -18,6 +18,8 @@ import { BUILT_IN_STYLES, DEFAULT_STYLE, applyStyle, loadLastAppliedStyle, loadS
 import { loadHomePage, saveHomePage } from './homePage';
 import type { HomePage } from './homePage';
 import { addRecentPerson, clearRecentPeople, loadRecentPeople, removeRecentPerson } from './recentPeople';
+import { addRecentPosition, clearRecentPositions, loadRecentPositions, removeRecentPosition } from './recentPositions';
+import type { RecentPosition } from './recentPositions';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
@@ -322,6 +324,41 @@ function EmployeeRecord({
   </div>;
 }
 
+// Status steps for a staged future incumbent. `pending` is the first step a
+// record can be in, so it counts as step 1 (not "not started").
+const FUTURE_STEPS: { status: FuturePositionStatus; label: string; Icon: typeof Clock }[] = [
+  { status: 'pending', label: 'Pending', Icon: Clock },
+  { status: 'locked', label: 'In review', Icon: Lock },
+  { status: 'completed', label: 'Completed', Icon: CheckCircle2 }
+];
+
+// Horizontal progress stepper for the staged future incumbent. Steps before the
+// current one are "done" (filled + check), the current one is highlighted, and
+// steps after it are muted. Renders nothing when no record has been staged.
+function FutureProgress({ status }: { status: FuturePositionStatus | null }) {
+  if (!status) return null;
+  const currentIndex = FUTURE_STEPS.findIndex((step) => step.status === status);
+  if (currentIndex < 0) return null;
+
+  return (
+    <ol className="future-progress" aria-label="Future incumbent progress">
+      {FUTURE_STEPS.map((step, index) => {
+        const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'todo';
+        const { Icon } = step;
+        return (
+          <li key={step.status} className={`future-progress-step future-progress-step--${state}`}>
+            <span className="future-progress-marker">
+              <Icon size={15} />
+            </span>
+            {index < FUTURE_STEPS.length - 1 && <span className="future-progress-line" aria-hidden="true" />}
+            <span className="future-progress-label">{step.label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 // Read-only Position Details drawer — non-draggable, mirrors the field layout
 // of the employee record but never reorders.
 function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePin, session, futureEnabled }: { details: PositionDetails; onClose: () => void; onOpenRecord: (employeeNumber: string) => void; pinned: boolean; onTogglePin: () => void; session: LoginSession | null; futureEnabled: boolean }) {
@@ -553,6 +590,7 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
         <div className="position-incumbent-title">
           <h4 className="record-section-title">Incumbent</h4>
         </div>
+        {futureEnabled && <FutureProgress status={future?.status ?? null} />}
         <div className="position-incumbent-tabs" role="tablist" aria-label="Incumbent sections">
           <button role="tab" aria-selected={incumbentTab === 'current'} className={`position-incumbent-tab ${incumbentTab === 'current' ? 'active' : ''}`} onClick={() => setIncumbentTab('current')}>
             <Users size={15} />Current
@@ -560,7 +598,6 @@ function PositionDetailView({ details, onClose, onOpenRecord, pinned, onTogglePi
           {futureEnabled && (
             <button role="tab" aria-selected={incumbentTab === 'future'} className={`position-incumbent-tab ${incumbentTab === 'future' ? 'active' : ''}`} onClick={() => setIncumbentTab('future')}>
               <CalendarClock size={15} />Future
-              {future && <span className={`position-tab-badge status-pill--${future.status}`}>{future.status}</span>}
             </button>
           )}
           {futureEnabled && session && (
@@ -867,6 +904,11 @@ export function App() {
   const [recentPeople, setRecentPeople] = useState<Person[]>(() => loadRecentPeople(session?.user.id ?? null));
   // True once the user runs an explicit search; clears when returning to recent.
   const [hasSearched, setHasSearched] = useState(false);
+  // Unified search results (people + positions) for the searched state. The
+  // landing/recent view still uses `people` + `recentPositions` below.
+  const [results, setResults] = useState<DirectoryResult[]>([]);
+  // "Recently searched" positions, persisted per-user (parallel to recentPeople).
+  const [recentPositions, setRecentPositions] = useState<RecentPosition[]>([]);
   const [search, setSearch] = useState('');
   const [schoolId, setSchoolId] = useState('');
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
@@ -1191,6 +1233,7 @@ export function App() {
     const recent = loadRecentPeople(session.user.id);
     setRecentPeople(recent);
     setPeople(recent);
+    setRecentPositions(loadRecentPositions(session.user.id));
     void getSchools(session)
       .then((nextSchools) => {
         setSchools(nextSchools);
@@ -1206,13 +1249,15 @@ export function App() {
   }, [session]);
 
   async function runSearch() {
+    const trimmed = search.trim();
+    if (!trimmed) return;
     setLoading(true);
     setError('');
     // Performing an explicit search switches the directory to search results.
     setHasSearched(true);
     try {
-      const result = await getPeople(search, schoolId, session);
-      setPeople(result.data);
+      const result = await getDirectory(trimmed, schoolId, session);
+      setResults(result.data);
       setSelectedPerson(null);
       setPersonRecord(null);
     } catch {
@@ -1278,7 +1323,20 @@ export function App() {
     setPositionError('');
     setPositionLoading(true);
     try {
-      setPositionDetails(await getPositionDetails(organization, trimmed));
+      const details = await getPositionDetails(organization, trimmed);
+      setPositionDetails(details);
+      // Track the opened position in the user's recent-positions list.
+      const userId = session?.user.id ?? null;
+      const nextRecent = addRecentPosition(userId, {
+        positionNumber: details.position.posNumber || trimmed,
+        positionName: details.position.posName,
+        organization: details.position.organization || organization,
+        organizationId: '',
+        fullName: details.incumbent?.fullName ?? '',
+        employeeNumber: details.incumbent?.employeeNumber ?? '',
+        vacant: details.vacant
+      });
+      setRecentPositions(nextRecent);
     } catch {
       setPositionError('The position details could not be loaded.');
     } finally {
@@ -1318,16 +1376,26 @@ export function App() {
     setSearch('');
     setSchoolId('');
     setHasSearched(false);
+    setResults([]);
     // Returning to no search shows the user's recent searches again.
     const recent = loadRecentPeople(session?.user.id ?? null);
     setRecentPeople(recent);
     setPeople(recent);
+    setRecentPositions(loadRecentPositions(session?.user.id ?? null));
   }
 
   // Remove one person from the recent-searches list (only shown while the
   // directory is displaying recents, not live search results).
   function removeRecent(person: Person) {
     const next = removeRecentPerson(session?.user.id ?? null, person.personId);
+    setRecentPeople(next);
+    if (!hasSearched) setPeople(next);
+  }
+
+  // Remove a recent person by id (the directory table holds DirectoryResult
+  // rows, which only carry the id).
+  function removeRecentPersonById(personId: string) {
+    const next = removeRecentPerson(session?.user.id ?? null, personId);
     setRecentPeople(next);
     if (!hasSearched) setPeople(next);
   }
@@ -1339,6 +1407,17 @@ export function App() {
     if (!hasSearched) setPeople(next);
   }
 
+  // Remove one position from the recent-positions list.
+  function removeRecentPos(positionNumber: string, organization: string) {
+    const next = removeRecentPosition(session?.user.id ?? null, positionNumber, organization);
+    setRecentPositions(next);
+  }
+
+  // Wipe the entire recent-positions list.
+  function clearAllRecentPositions() {
+    setRecentPositions(clearRecentPositions(session?.user.id ?? null));
+  }
+
   // Compute which system-wide announcements are visible for the current user.
   // Banners: active, not dismissed, newest first, capped at MAX_ACTIVE_BANNERS.
   const baseBannerKey = (message: SystemMessage) => bannerStorageKey(message.id, message.updatedAt);
@@ -1347,6 +1426,59 @@ export function App() {
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
     .slice(0, 3);
   const activeSplash = systemMessages.find((message) => message.type === 'splash' && message.isActive) ?? null;
+
+  // The rows the directory table renders. While searching it is the unified
+  // people+positions result set; on landing it is the recent people and
+  // positions merged (people first), so both kinds of recents are reachable.
+  const recentResults: DirectoryResult[] = [
+    ...recentPeople.map((person): DirectoryResult => ({
+      kind: 'person',
+      personId: person.personId,
+      employeeNumber: person.employeeNumber,
+      fullName: person.fullName,
+      email: person.email,
+      organization: person.organization,
+      organizationId: person.organizationId,
+      positionName: person.positionName,
+      positionNumber: '',
+      vacant: false
+    })),
+    ...recentPositions.map((position): DirectoryResult => ({
+      kind: 'position',
+      positionNumber: position.positionNumber,
+      positionName: position.positionName,
+      organization: position.organization,
+      organizationId: position.organizationId,
+      personId: null,
+      employeeNumber: position.employeeNumber,
+      fullName: position.fullName,
+      email: '',
+      vacant: position.vacant
+    }))
+  ];
+  const directoryRows = hasSearched ? results : recentResults;
+  const directoryCount = directoryRows.length;
+
+  function openDirectoryRow(row: DirectoryResult) {
+    if (row.kind === 'person') {
+      void selectPerson({
+        personId: row.personId,
+        employeeNumber: row.employeeNumber,
+        firstName: '',
+        lastName: '',
+        fullName: row.fullName,
+        email: row.email,
+        organizationId: row.organizationId,
+        organization: row.organization,
+        positionName: row.positionName,
+        costCenter: '',
+        objectCode: '',
+        activeAssignment: true
+      } as Person);
+    } else {
+      void openPositionByNumber(row.positionNumber, row.organization);
+    }
+  }
 
   if (!session) {
     return <main className="login-shell">
@@ -1422,9 +1554,9 @@ export function App() {
         <div>
           <p className="eyebrow">People directory</p>
           <h2>Find the right record quickly.</h2>
-          <p className="hero-copy">Search employee records by name, employee number, or organization.</p>
+          <p className="hero-copy">Search employee records by name, employee number, position number, or organization.</p>
         </div>
-        <div className="hero-stat"><Users size={18} /><strong>{people.length}</strong><span>{hasSearched ? 'results' : 'recently searched'}</span></div>
+        <div className="hero-stat"><Users size={18} /><strong>{directoryCount}</strong><span>{hasSearched ? 'results' : 'recently searched'}</span></div>
       </section>
 
       <section className="workspace-grid" aria-label="People lookup">
@@ -1435,17 +1567,17 @@ export function App() {
               <h3>People lookup</h3>
             </div>
             <div className="panel-heading-actions">
-              <span className="result-count">{people.length} {hasSearched ? 'results' : 'recent'}</span>
-              {!hasSearched && people.length > 0 && <button type="button" className="link-button" onClick={clearAllRecent}>Clear all</button>}
+              <span className="result-count">{directoryCount} {hasSearched ? 'results' : 'recent'}</span>
+              {!hasSearched && directoryCount > 0 && <button type="button" className="link-button" onClick={() => { clearAllRecent(); clearAllRecentPositions(); }}>Clear all</button>}
             </div>
           </div>
 
           <div className="search-row">
             <label className="search-field">
               <Search size={18} aria-hidden="true" />
-              <span className="sr-only">Search people</span>
-              <input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void runSearch(); }} placeholder="Name, employee number, or organization" />
-              {search && <button className="field-clear" onClick={() => { setSearch(''); setHasSearched(false); const recent = loadRecentPeople(session?.user.id ?? null); setRecentPeople(recent); setPeople(recent); }} aria-label="Clear search" title="Clear search"><X size={15} /></button>}
+              <span className="sr-only">Search people and positions</span>
+              <input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void runSearch(); }} placeholder="Name, employee no., position no., or organization" />
+              {search && <button className="field-clear" onClick={clearSearch} aria-label="Clear search" title="Clear search"><X size={15} /></button>}
             </label>
             <SchoolCombobox
               schools={schools}
@@ -1460,18 +1592,28 @@ export function App() {
           </div>
 
           {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
-          {loading ? <div className="empty-state"><span className="loader" />Loading directory</div> : people.length === 0 ? <div className="empty-state">{hasSearched ? 'No people match the current filters.' : 'No recent searches.'}</div> : (
+          {loading ? <div className="empty-state"><span className="loader" />Loading directory</div> : directoryRows.length === 0 ? <div className="empty-state">{hasSearched ? 'No people or positions match the current filters.' : 'No recent searches.'}</div> : (
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Person</th><th>Organization</th><th>Position</th><th>Employee no.</th><th><span className="sr-only">Open</span></th>{!hasSearched && <th className="recent-actions-col"><span className="sr-only">Remove</span></th>}</tr></thead>
-                <tbody>{people.map((person) => <tr key={person.personId} className={selectedPerson?.personId === person.personId ? 'selected' : ''} onClick={() => void selectPerson(person)}>
-                  <td><strong>{person.fullName}</strong><span>{person.email}</span></td>
-                  <td>{person.organization}</td><td>{person.positionName}</td><td className="mono">{person.employeeNumber}</td>
-                  <td><ArrowUpRight size={17} aria-hidden="true" /></td>
-                  {!hasSearched && <td className="recent-actions-col">
-                    <button type="button" className="field-clear" aria-label={`Remove ${person.fullName} from recent searches`} title="Remove from recent searches" onClick={(event) => { event.stopPropagation(); removeRecent(person); }}><X size={15} /></button>
-                  </td>}
-                </tr>)}</tbody>
+                <tbody>{directoryRows.map((row) => {
+                  const key = row.kind === 'person' ? `person:${row.personId}` : `position:${row.positionNumber}:${row.organization}`;
+                  const selected = row.kind === 'person' && selectedPerson?.personId === row.personId;
+                  return <tr key={key} className={selected ? 'selected' : ''} onClick={() => openDirectoryRow(row)}>
+                    <td>
+                      {row.kind === 'position' && row.vacant
+                        ? <span className="badge-vacant">Vacant</span>
+                        : <><strong>{row.fullName}</strong>{row.email && <span>{row.email}</span>}</>}
+                    </td>
+                    <td>{row.organization}</td>
+                    <td>{row.positionName}</td>
+                    <td className="mono">{row.kind === 'position' && row.vacant ? '—' : row.employeeNumber}</td>
+                    <td><ArrowUpRight size={17} aria-hidden="true" /></td>
+                    {!hasSearched && <td className="recent-actions-col">
+                      <button type="button" className="field-clear" aria-label={`Remove ${row.kind === 'person' ? row.fullName : row.positionName} from recent searches`} title="Remove from recent searches" onClick={(event) => { event.stopPropagation(); if (row.kind === 'person') removeRecentPersonById(row.personId); else removeRecentPos(row.positionNumber, row.organization); }}><X size={15} /></button>
+                    </td>}
+                  </tr>;
+                })}</tbody>
               </table>
             </div>
           )}

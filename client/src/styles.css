@@ -58,7 +58,7 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 .hero-band { display: flex; justify-content: space-between; align-items: end; gap: 28px; padding: clamp(42px, 8vw, 104px) clamp(20px, 10vw, 150px) clamp(40px, 6vw, 78px); border-bottom: 1px solid #d9d0c1; }
 .hero-copy { max-width: 470px; margin-bottom: 0; color: #756f66; font-size: 17px; line-height: 1.5; }.hero-stat { flex: 0 0 auto; gap: 9px; padding: 13px 16px; color: #2e5e56; border: 1px solid #b7c9c1; background: #edf3ee; border-radius: 9px; font-size: 13px; }.hero-stat strong { font-size: 20px; }.hero-stat span { color: #56746c; }
 .workspace-grid { display: grid; grid-template-columns: 1fr; gap: 24px; max-width: 1600px; margin: 0 auto; padding: 32px clamp(20px, 5vw, 72px) 72px; }.directory-panel { min-width: 0; border: 1px solid #d9d0c1; background: rgba(255, 252, 246, .78); border-radius: 12px; }.directory-panel { padding: 24px; }.panel-heading { justify-content: space-between; margin-bottom: 22px; }.result-count { color: #8b6b3e; font-size: 13px; }
-.reports-page { max-width: 1600px; margin: 0; padding: clamp(38px, 6vw, 72px) clamp(20px, 5vw, 72px) 80px; }.reports-page-heading { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 28px; }.reports-page h2 { margin-bottom: 12px; }.reports-intro { max-width: 620px; margin: 0; color: #756f66; line-height: 1.5; }.report-count { display: grid; gap: 2px; min-width: 130px; padding: 14px 16px; color: #2e5e56; border: 1px solid #b7c9c1; border-radius: 9px; background: #edf3ee; }.report-count strong { font-size: 24px; }.report-count span { color: #56746c; font-size: 12px; }.report-search { display: flex; align-items: center; gap: 9px; height: 46px; max-width: 520px; margin-bottom: 30px; padding: 0 13px; color: #8b6b3e; border: 1px solid #d2c7b7; border-radius: 8px; background: #fffdf8; }.report-search input { width: 100%; border: 0; outline: 0; background: transparent; }.school-combobox { position: relative; display: flex; align-items: center; gap: 9px; height: 44px; min-width: 0; flex: 0 1 380px; padding: 0 13px; color: #8b6b3e; border: 1px solid #d2c7b7; border-radius: 8px; background: #fffdf8; }
+.reports-page { max-width: 1600px; margin: 0; padding: clamp(38px, 6vw, 72px) clamp(20px, 5vw, 72px) 80px; }.reports-page-heading { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 28px; }.reports-page h2 { margin-bottom: 12px; }.reports-intro { max-width: 620px; margin: 0; color: #756f66; line-height: 1.5; }.report-count { display: grid; gap: 2px; min-width: 130px; padding: 14px 16px; color: #2e5e56; border: 1px solid #b7c9c1; border-radius: 9px; background: #edf3ee; }.report-count strong { font-size: 24px; }.report-count span { color: #56746c; font-size: 12px; }.report-count-head { display: flex; align-items: center; gap: 8px; }.report-count-head svg { flex: 0 0 auto; }.report-search { display: flex; align-items: center; gap: 9px; height: 46px; max-width: 520px; margin-bottom: 30px; padding: 0 13px; color: #8b6b3e; border: 1px solid #d2c7b7; border-radius: 8px; background: #fffdf8; }.report-search input { width: 100%; border: 0; outline: 0; background: transparent; }.school-combobox { position: relative; display: flex; align-items: center; gap: 9px; height: 44px; min-width: 0; flex: 0 1 380px; padding: 0 13px; color: #8b6b3e; border: 1px solid #d2c7b7; border-radius: 8px; background: #fffdf8; }
 .school-combobox input { min-width: 0; width: 100%; border: 0; outline: 0; color: #26231f; background: transparent; }
 .school-combobox input::placeholder { color: #a79b8c; }
 .school-combobox .combobox-chevron { pointer-events: none; flex: 0 0 auto; color: #8b6b3e; }
@@ -397,6 +397,13 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 .report-color-dot.active { border-color: #2e5e56; box-shadow: 0 0 0 2px rgba(46,94,86,.18); }
 .report-color-dot:hover { transform: scale(1.08); }
 .badge-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #2e5e56; color: #fff; font-size: 11px; font-weight: 700; }
+/* Vacant seat badge — shown in the Person column when a position has no
+   incumbent. `display: inline-block` is REQUIRED: percentage/padding collapse
+   on an inline box (the .hbar-fill bug class). The selector is scoped to the
+   directory table cell because the generic `td:first-child span { display:block }`
+   rule above is MORE specific and would otherwise stretch the badge to the full
+   column width. */
+td:first-child .badge-vacant { display: inline-block; padding: 2px 8px; border-radius: 2px; border: 1px solid #e8c9a0; background: #fbeed9; color: #8a5a1c; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .report-invite-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .report-invite-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e3e7e2; border-radius: 8px; background: #fff; font-size: 13px; }
 .report-invite-role { margin-left: auto; color: #665f56; font-size: 12px; text-transform: capitalize; }
@@ -463,6 +470,7 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 [data-theme="dark"] .report-comment-body { color: #e8e2d7; }
 [data-theme="dark"] .report-comment-composer textarea { border-color: #3a332a; background: #241f19; color: #e8e2d7; }
 [data-theme="dark"] .badge-count { background: #6fbfa8; color: #14110d; }
+[data-theme="dark"] .badge-vacant { border-color: #6b4a22; background: #3a2c17; color: #e8b877; }
 
 /* Row Highlighting — Settings Options tab + report legend */
 .highlight-desc { margin: 0 0 10px; color: #756f66; font-size: 12px; font-weight: 400; line-height: 1.5; }
@@ -1104,6 +1112,80 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 .position-incumbent-title .record-section-title {
   flex: 0 0 auto;
 }
+/* Future incumbent progress stepper (Pending -> In review -> Completed) */
+.future-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin: 12px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+.future-progress-step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+/* Connector line: spans from this marker to the next, sitting behind them. */
+.future-progress-line {
+  position: absolute;
+  top: 15px;
+  left: 50%;
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: #e4ddd1;
+  z-index: 0;
+}
+.future-progress-step--done .future-progress-line {
+  background: #2e5e56;
+}
+.future-progress-marker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #8c857a;
+  background: #ece6db;
+  transition: color .15s, background .15s;
+}
+.future-progress-step--done .future-progress-marker {
+  color: #fffdf8;
+  background: #2e5e56;
+}
+.future-progress-step--current .future-progress-marker {
+  color: #fffdf8;
+  background: #2e5e56;
+  box-shadow: 0 0 0 4px rgba(46, 94, 86, .16);
+}
+.future-progress-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8c857a;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.future-progress-step--done .future-progress-label,
+.future-progress-step--current .future-progress-label {
+  color: #2e5e56;
+}
+[data-theme="dark"] .future-progress-line { background: #3a332a; }
+[data-theme="dark"] .future-progress-step--done .future-progress-line { background: #6fbfa8; }
+[data-theme="dark"] .future-progress-marker { color: #9b9284; background: #2c271f; }
+[data-theme="dark"] .future-progress-step--done .future-progress-marker,
+[data-theme="dark"] .future-progress-step--current .future-progress-marker { color: #14110d; background: #6fbfa8; }
+[data-theme="dark"] .future-progress-step--current .future-progress-marker { box-shadow: 0 0 0 4px rgba(126, 203, 181, .16); }
+[data-theme="dark"] .future-progress-label { color: #9b9284; }
+[data-theme="dark"] .future-progress-step--done .future-progress-label,
+[data-theme="dark"] .future-progress-step--current .future-progress-label { color: #7ecbb5; }
 .position-incumbent-tabs .icon-button--bare {
   width: 30px;
   height: 30px;
@@ -1708,6 +1790,7 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 }
 [data-style] .segmented-control { border-radius: var(--style-radius); }
 [data-style] .segmented-control button { border-radius: var(--style-radius-sm); }
+[data-style] .badge-vacant { color: var(--style-accent); border-color: color-mix(in srgb, var(--style-accent) 38%, #fff); background: color-mix(in srgb, var(--style-accent) 12%, #fff); }
 [data-style] .remember-row input[type="checkbox"], [data-style] .settings-checkbox input[type="checkbox"] { accent-color: var(--style-primary); }
 [data-style] .home-page-slider-thumb { background: var(--style-primary); }
 [data-style] .result-count { color: var(--style-accent); }
@@ -1888,6 +1971,7 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 [data-theme="dark"][data-style] .recent-runs-title { color: var(--style-text-muted-dark); }
 [data-theme="dark"][data-style] .report-view-meta { color: var(--style-text-muted-dark); border-color: var(--style-border-dark); background: var(--style-surface-dark-2); }
 [data-theme="dark"][data-style] .badge-count { color: #fff; background: var(--style-primary); }
+[data-theme="dark"][data-style] .badge-vacant { border-color: var(--style-border-dark); color: var(--style-accent); background: var(--style-surface-dark-2); }
 [data-theme="dark"][data-style] .nav-count { color: var(--style-text-dark); background: var(--style-surface-dark-2); }
 [data-theme="dark"][data-style] .status-dot { background: var(--style-primary); }
 [data-theme="dark"][data-style] .report-columns-count { color: var(--style-text-dark); background: var(--style-surface-dark-2); }

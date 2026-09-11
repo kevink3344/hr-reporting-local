@@ -6,6 +6,7 @@ import type {
   FuturePositionStatus,
   GenericReportRun,
   LoginSession,
+  DirectoryPage,
   PersonPage,
   PersonRecord,
   PositionComment,
@@ -86,6 +87,14 @@ export function getPeople(search: string, schoolId: string, session?: LoginSessi
   if (search.trim()) params.set('search', search.trim());
   if (schoolId) params.set('schoolId', schoolId);
   return request<PersonPage>(`/api/people?${params.toString()}`, { headers: scopeHeaders(session) });
+}
+
+// Unified Directory search: 6-digit employee number, 7-digit position number,
+// or free text. Returns a merged people + positions result set.
+export function getDirectory(search: string, schoolId: string, session?: LoginSession | null): Promise<DirectoryPage> {
+  const params = new URLSearchParams({ search: search.trim(), page: '1', pageSize: '50' });
+  if (schoolId) params.set('schoolId', schoolId);
+  return request<DirectoryPage>(`/api/directory?${params.toString()}`, { headers: scopeHeaders(session) });
 }
 
 export async function login(wakeId: string, employeeId: string): Promise<LoginSession> {

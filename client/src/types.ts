@@ -74,6 +74,50 @@ export type EmployeeLookupResponse =
   | { found: true; employee: EmployeeLookup }
   | { found: false };
 
+// ---- Unified Directory search (people + positions) ----
+// Mirrors server src/types.ts. A person row and a position row answer different
+// questions and open different drawers, so they are a discriminated union
+// rather than a position forced into the Person shape. `vacant` is always false
+// on a person row (a person row only exists for a filled seat).
+export type DirectoryPersonResult = {
+  kind: 'person';
+  personId: string;
+  employeeNumber: string;
+  fullName: string;
+  email: string;
+  organization: string;
+  organizationId: string;
+  positionName: string;
+  positionNumber: string;
+  vacant: false;
+};
+
+export type DirectoryPositionResult = {
+  kind: 'position';
+  positionNumber: string;
+  positionName: string;
+  organization: string;
+  organizationId: string;
+  /** null on a position row — the row is the seat, not a person. */
+  personId: null;
+  /** The incumbent's number, or '' when the seat is vacant. */
+  employeeNumber: string;
+  /** The incumbent's name, or '' when the seat is vacant. */
+  fullName: string;
+  email: string;
+  vacant: boolean;
+};
+
+export type DirectoryResult = DirectoryPersonResult | DirectoryPositionResult;
+
+export type DirectoryPage = {
+  data: DirectoryResult[];
+  page: number;
+  pageSize: number;
+  total: number;
+  counts: { people: number; positions: number };
+};
+
 export type School = {
   id: string;
   schoolNumber: string;
