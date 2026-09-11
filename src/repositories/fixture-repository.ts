@@ -26,6 +26,8 @@ import type {
   FuturePositionUpdate,
   PositionCommentInput,
   PositionPinInput,
+  PositionSearchFilter,
+  PositionSearchHit,
   Repositories,
   ReportDefinitionInput,
   ReportDefinitionUpdate,
@@ -155,6 +157,39 @@ async function getPositionDetails(posNumber: string, organization: string): Prom
     (candidate) => candidate.posNumber === posNumber && candidate.organization === organization
   );
   return row ? toPositionDetailsFromRow(row) : null;
+}
+
+// Directory position search — NUMBER ONLY, over the synthetic open positions.
+// One row per position; incumbent fields blank when the seat is vacant.
+async function searchPositions(filter: PositionSearchFilter): Promise<PositionSearchHit[]> {
+  const limit = filter.limit ?? 25;
+  const allowed = filter.organizations && filter.organizations.length > 0
+    ? new Set(filter.organizations)
+    : null;
+  const hits: PositionSearchHit[] = [];
+  const seen = new Set<string>();
+  for (const row of fixtureOpenPositions) {
+    if (row.posNumber !== filter.posNumber) continue;
+    if (allowed && !allowed.has(row.organization)) continue;
+    const key = `${row.posNumber}::${row.organization}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const incumbentName = row.fullName.trim();
+    const incumbentEmployeeNumber = row.employeeNumber.trim();
+    const vacant = !incumbentName && !incumbentEmployeeNumber;
+    hits.push({
+      positionNumber: row.posNumber,
+      positionName: row.posName,
+      organization: row.organization,
+      organizationId: '',
+      incumbentName,
+      incumbentEmployeeNumber,
+      incumbentPersonId: vacant ? '' : incumbentEmployeeNumber,
+      vacant
+    });
+    if (hits.length >= limit) break;
+  }
+  return hits;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +346,7 @@ export const fixtureRepositories: Repositories = {
     }
   },
   reports: { openPositions },
-  positions: { getPositionDetails },
+  positions: { getPositionDetails, search: searchPositions },
   reportSections: {
     async list(includeInactive = false) {
       const sections = (includeInactive ? fixtureSections : fixtureSections.filter((section) => section.isActive))

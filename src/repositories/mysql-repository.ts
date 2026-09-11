@@ -1,5 +1,5 @@
 import type { GenericReportRow, GenericReportRowWithSubreport, GenericReportRun, OpenPositionRow, Person, PersonRecord, PositionDetails, School, ReportDefinition, ReportSection, ReportView, ReportViewComment, ReportViewInvite, PositionPin, PositionComment, SystemMessage, SystemMessageType, SystemUser, FuturePosition, ViewDefinition } from '../types.js';
-import type { Repositories, StyleTheme } from './contracts.js';
+import type { Repositories, StyleTheme, PositionSearchFilter, PositionSearchHit } from './contracts.js';
 import { query } from '../db.js';
 import { REPORT_ROW_CAP, bindNamedParam, bindOrganization, validateReportSql, validateSubreportSql, newId, nowIso } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
@@ -229,6 +229,93 @@ async function getPositionDetails(posNumber: string, organization: string): Prom
   const rows = await query<PositionDetailSqlRow>(POSITION_DETAIL_SQL, [posNumber, organization]);
   const row = rows[0];
   return row ? toPositionDetails(row) : null;
+}
+
+// Directory position search — NUMBER ONLY. Matches on `pos_number` and returns
+// one row per position (incumbent fields blank when the seat is vacant).
+//
+// Deliberately NOT matched: `pos_name`. A title search ("Teacher") matches
+// hundreds of seats and was rejected as a Directory feature.
+//
+// Gotchas carried over from POSITION_DETAIL_SQL / OPEN_POSITIONS_SQL:
+//  - position_info.pos_number is INT, employee_info.pos_number is varchar ->
+//    cast BOTH sides of the join or the link silently fails.
+//  - No `NOT LIKE '888%'` exclusion: that belongs to the open-positions REPORT.
+//    A user pasting 8884418 must get the seat back.
+//  - pos_number is not unique per organization -> return ALL matches, no LIMIT 1.
+//  - employee_info is per-assignment -> one position can join several rows (a
+//    seat filled by several people over time). The ORDER BY below picks the
+//    CURRENT incumbent: latest contract_start first, then primary_flag, then
+//    latest hire_date. Verified on 8884418 (4 historical incumbents) this picks
+//    Hester — the same person the Position Details drawer shows.
+//  - NO pos_ending filter. A pasted position number is a deliberate lookup, so a
+//    seat that has ENDED still resolves (e.g. 8884418 = "Teacher - Recovery",
+//    ended 2026-08-15, incumbent Hester). "If it is in the database, show it."
+//    This is safe because the match is on the exact number, not a title scan.
+type PositionSearchSqlRow = {
+  pos_number: number | string | null;
+  pos_name: string | null;
+  organization: string | null;
+  full_name: string | null;
+  emp_number: string | null;
+  person_id: string | number | null;
+  primary_flag: string | null;
+};
+
+const POSITION_SEARCH_SQL = `
+SELECT
+  pi.pos_number,
+  pi.pos_name,
+  pi.organization,
+  IFNULL(e.full_name, '') AS full_name,
+  IFNULL(e.emp_number, '') AS emp_number,
+  e.person_id,
+  e.primary_flag
+FROM position_info pi
+LEFT JOIN employee_info e
+  ON IFNULL(CAST(e.pos_number AS UNSIGNED), 0) = IFNULL(CAST(pi.pos_number AS UNSIGNED), 0)
+WHERE CAST(pi.pos_number AS CHAR) = ?
+ORDER BY
+  pi.organization,
+  CASE WHEN e.primary_flag = 'Y' THEN 0 ELSE 1 END,
+  COALESCE(e.contract_start, '1900-01-01') DESC,
+  COALESCE(e.hire_date, '1900-01-01') DESC
+LIMIT ?;
+`;
+
+async function searchPositions(filter: PositionSearchFilter): Promise<PositionSearchHit[]> {
+  const limit = filter.limit ?? 25;
+  const rows = await query<PositionSearchSqlRow>(POSITION_SEARCH_SQL, [filter.posNumber, limit]);
+
+  // Collapse the per-assignment join down to ONE row per position. The ORDER BY
+  // already puts the primary assignment first, so the first row seen wins.
+  const byNumber = new Map<string, PositionSearchHit>();
+  for (const row of rows) {
+    const positionNumber = String(row.pos_number ?? '');
+    const organization = row.organization ?? '';
+    const key = `${positionNumber}::${organization}`;
+    if (byNumber.has(key)) continue;
+    const incumbentName = (row.full_name ?? '').trim();
+    const incumbentEmployeeNumber = (row.emp_number ?? '').trim();
+    const vacant = !incumbentName && !incumbentEmployeeNumber;
+    byNumber.set(key, {
+      positionNumber,
+      positionName: row.pos_name ?? '',
+      organization,
+      organizationId: '',
+      incumbentName,
+      incumbentEmployeeNumber,
+      incumbentPersonId: vacant ? '' : String(row.person_id ?? ''),
+      vacant
+    });
+  }
+
+  const hits = [...byNumber.values()];
+  if (filter.organizations && filter.organizations.length > 0) {
+    const allowed = new Set(filter.organizations);
+    return hits.filter((hit) => allowed.has(hit.organization));
+  }
+  return hits;
 }
 
 type EmployeeRow = {
@@ -826,7 +913,7 @@ export const mysqlRepositories: Repositories = {
     }
   },
   reports: { openPositions },
-  positions: { getPositionDetails },
+  positions: { getPositionDetails, search: searchPositions },
   // MySQL deferred: configurable report tables land here when the prod
   // MySQL now owns ALL config tables. Each repo reads/writes the live MySQL
   // reporting database directly, mirroring the Turso config implementation.

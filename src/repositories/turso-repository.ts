@@ -27,6 +27,8 @@ import type {
   FuturePositionUpdate,
   PositionCommentInput,
   PositionPinInput,
+  PositionSearchFilter,
+  PositionSearchHit,
   Repositories,
   ReportDefinitionInput,
   ReportDefinitionUpdate,
@@ -305,6 +307,77 @@ async function getPositionDetails(posNumber: string, organization: string): Prom
   return row ? toPositionDetails(row) : null;
 }
 
+// Directory position search — NUMBER ONLY (mirrors the MySQL variant). SQLite
+// compares TEXT vs numeric literals by storage class, so both sides of the join
+// and the match are CAST to INTEGER. The ORDER BY picks the CURRENT incumbent
+// (latest contract_start first) so the label agrees with the Position Details
+// drawer. NO pos_ending filter: a pasted position number is a deliberate lookup,
+// so an ended seat still resolves.
+type PositionSearchSqlRow = {
+  pos_number: number | string | null;
+  pos_name: string | null;
+  organization: string | null;
+  full_name: string | null;
+  emp_number: string | null;
+  person_id: string | number | null;
+  primary_flag: string | null;
+};
+
+const POSITION_SEARCH_SQL = `
+SELECT
+  pi.pos_number,
+  pi.pos_name,
+  pi.organization,
+  IFNULL(e.full_name, '') AS full_name,
+  IFNULL(e.emp_number, '') AS emp_number,
+  e.person_id,
+  e.primary_flag
+FROM position_info pi
+LEFT JOIN employee_info e
+  ON CAST(e.pos_number AS INTEGER) = CAST(pi.pos_number AS INTEGER)
+WHERE CAST(pi.pos_number AS INTEGER) = CAST(? AS INTEGER)
+ORDER BY
+  pi.organization,
+  CASE WHEN e.primary_flag = 'Y' THEN 0 ELSE 1 END,
+  COALESCE(e.contract_start, '1900-01-01') DESC,
+  COALESCE(e.hire_date, '1900-01-01') DESC
+LIMIT ?;
+`;
+
+async function searchPositions(filter: PositionSearchFilter): Promise<PositionSearchHit[]> {
+  const limit = filter.limit ?? 25;
+  const rows = await query<PositionSearchSqlRow>(POSITION_SEARCH_SQL, [filter.posNumber, limit]);
+
+  // Collapse the per-assignment join to ONE row per position (primary first).
+  const byNumber = new Map<string, PositionSearchHit>();
+  for (const row of rows) {
+    const positionNumber = String(row.pos_number ?? '');
+    const organization = row.organization ?? '';
+    const key = `${positionNumber}::${organization}`;
+    if (byNumber.has(key)) continue;
+    const incumbentName = (row.full_name ?? '').trim();
+    const incumbentEmployeeNumber = (row.emp_number ?? '').trim();
+    const vacant = !incumbentName && !incumbentEmployeeNumber;
+    byNumber.set(key, {
+      positionNumber,
+      positionName: row.pos_name ?? '',
+      organization,
+      organizationId: '',
+      incumbentName,
+      incumbentEmployeeNumber,
+      incumbentPersonId: vacant ? '' : String(row.person_id ?? ''),
+      vacant
+    });
+  }
+
+  const hits = [...byNumber.values()];
+  if (filter.organizations && filter.organizations.length > 0) {
+    const allowed = new Set(filter.organizations);
+    return hits.filter((hit) => allowed.has(hit.organization));
+  }
+  return hits;
+}
+
 type EmployeeRow = {
   id: number;
   person_id: string | number;
@@ -511,7 +584,7 @@ export const tursoRepositories: Repositories = {
     }
   },
   reports: { openPositions },
-  positions: { getPositionDetails },
+  positions: { getPositionDetails, search: searchPositions },
   reportSections: {
     async list(includeInactive = false) {
       const rows = await query<SectionRow>(

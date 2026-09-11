@@ -64,6 +64,52 @@ describe('HR Reporting API foundation', () => {
     expect(await response.json()).toEqual({ error: 'PERSON_NOT_FOUND' });
   });
 
+  describe('GET /api/directory', () => {
+    it('requires a non-empty search term', async () => {
+      const response = await fetch(`${baseUrl}/api/directory`);
+      expect(response.status).toBe(400);
+    });
+
+    it('resolves a 6-digit employee number to a person row', async () => {
+      const response = await fetch(`${baseUrl}/api/directory?search=900001`);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.counts).toEqual({ people: 1, positions: 0 });
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0]).toMatchObject({ kind: 'person', employeeNumber: '900001', vacant: false });
+    });
+
+    it('does not match a 6-digit number as a substring of a longer number', async () => {
+      // '900001' is an EXACT employee-number match; a 6-digit query must not
+      // behave like a substring scan of longer numbers.
+      const response = await fetch(`${baseUrl}/api/directory?search=900001`);
+      const body = await response.json();
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0]).toMatchObject({ kind: 'person', employeeNumber: '900001' });
+    });
+
+    it('runs the position branch for a 7-digit position number', async () => {
+      // Fixture positions are keyed by their literal 4-digit number, so a
+      // 7-digit query finds nothing — assert the branch ran and reported zero.
+      // On live MySQL a 7-digit number resolves, INCLUDING an ended seat
+      // (no pos_ending filter — "if it is in the database, show it").
+      const response = await fetch(`${baseUrl}/api/directory?search=0001002`);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.counts).toEqual({ people: 0, positions: 0 });
+      expect(body.data).toEqual([]);
+    });
+
+    it('falls back to a people text search for non-numeric queries', async () => {
+      const response = await fetch(`${baseUrl}/api/directory?search=Sample`);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.counts.positions).toBe(0);
+      expect(body.data.length).toBeGreaterThan(0);
+      expect(body.data.every((row: { kind: string }) => row.kind === 'person')).toBe(true);
+    });
+  });
+
   describe('GET /api/employees/lookup', () => {
     it('returns the narrow projection for a matching 6-digit employee number', async () => {
       const response = await fetch(`${baseUrl}/api/employees/lookup?employeeNumber=900001`);

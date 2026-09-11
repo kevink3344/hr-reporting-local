@@ -59,6 +59,30 @@ export const openApiDocument = {
         }
       }
     },
+    '/directory': {
+      get: {
+        tags: ['People'],
+        operationId: 'searchDirectory',
+        summary: 'Unified people + position search (number-only)',
+        description:
+          'Number-only classification: 6 digits = employee number (people), ' +
+          '7 digits = position number (positions, including vacant seats), ' +
+          'anything else = people text search. Position titles are not matched.',
+        parameters: [
+          { name: 'search', in: 'query', required: true, schema: { type: 'string', minLength: 1 } },
+          { name: 'schoolId', in: 'query', schema: { type: 'string' } },
+          { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+          { name: 'pageSize', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } }
+        ],
+        responses: {
+          '200': {
+            description: 'Merged directory results',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/DirectoryPage' } } }
+          },
+          '400': { description: 'SEARCH_REQUIRED — search must be non-empty' }
+        }
+      }
+    },
     '/people/{personId}': {
       get: {
         tags: ['People'],
@@ -619,10 +643,46 @@ export const openApiDocument = {
           total: { type: 'integer' }
         }
       },
+      DirectoryResult: {
+        type: 'object',
+        description:
+          'A person row (kind=person) or a position row (kind=position). ' +
+          'A position row with vacant=true has no incumbent.',
+        required: ['kind', 'organization', 'organizationId', 'positionName'],
+        properties: {
+          kind: { type: 'string', enum: ['person', 'position'] },
+          personId: { type: 'string', nullable: true },
+          employeeNumber: { type: 'string' },
+          fullName: { type: 'string' },
+          email: { type: 'string' },
+          organization: { type: 'string' },
+          organizationId: { type: 'string' },
+          positionName: { type: 'string' },
+          positionNumber: { type: 'string' },
+          vacant: { type: 'boolean' }
+        }
+      },
+      DirectoryPage: {
+        type: 'object',
+        required: ['data', 'page', 'pageSize', 'total', 'counts'],
+        properties: {
+          data: { type: 'array', items: { $ref: '#/components/schemas/DirectoryResult' } },
+          page: { type: 'integer' },
+          pageSize: { type: 'integer' },
+          total: { type: 'integer' },
+          counts: {
+            type: 'object',
+            required: ['people', 'positions'],
+            properties: {
+              people: { type: 'integer' },
+              positions: { type: 'integer' }
+            }
+          }
+        }
+      },
       PersonRecord: {
         type: 'object',
-        required: ['personId', 'identity', 'contact', 'assignment', 'compensation', 'contract', 'licensure', 'service', 'leaveBalances'],
-        properties: {
+        required: ['personId', 'identity', 'contact', 'assignment', 'compensation', 'contract', 'licensure', 'service', 'leaveBalances'],        properties: {
           personId: { type: 'string' },
           identity: { type: 'object', additionalProperties: true },
           contact: { type: 'object', additionalProperties: true },

@@ -49,7 +49,36 @@ export interface ReportsRepository {
 
 export interface PositionsRepository {
   getPositionDetails(posNumber: string, organization: string): Promise<PositionDetails | null>;
+  /**
+   * Directory search: positions whose `pos_number` matches, scoped to the
+   * caller's visible organizations. Number-only — `pos_name` is never matched
+   * (a title search returns hundreds of rows and was explicitly rejected).
+   * Returns one row per position, incumbent fields blank when the seat is vacant.
+   */
+  search(filter: PositionSearchFilter): Promise<PositionSearchHit[]>;
 }
+
+export type PositionSearchFilter = {
+  /** The 7-digit position number (already validated by the route). */
+  posNumber: string;
+  /** Organization NAMES the caller may see; omitted = unscoped. */
+  organizations?: string[];
+  limit?: number;
+};
+
+export type PositionSearchHit = {
+  positionNumber: string;
+  positionName: string;
+  organization: string;
+  organizationId: string;
+  /** Incumbent's name, or '' when vacant. */
+  incumbentName: string;
+  /** Incumbent's employee number, or '' when vacant. */
+  incumbentEmployeeNumber: string;
+  /** Incumbent's person id, or '' when vacant. */
+  incumbentPersonId: string;
+  vacant: boolean;
+};
 
 export type ReportSectionInput = {
   title: string;

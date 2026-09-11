@@ -23,7 +23,7 @@ import { openApiDocument } from './openapi.js';
 import { viewDefinitionSchema } from './report-views.js';
 import { reportHighlightRulesSchema } from './report-highlight.js';
 import { validateSubreportSql } from './reports-sql.js';
-import type { School } from './types.js';
+import type { School, DirectoryResult } from './types.js';
 import { isAiConfigured } from './config.js';
 import { ask as aiAsk, listHistory as aiListHistory, getHistory as aiGetHistory, deleteHistory as aiDeleteHistory } from './ai/ai.js';
 
@@ -33,6 +33,19 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25)
 });
+
+// Unified Directory search. `search` is REQUIRED and non-empty so a blank query
+// can never trigger a full-table scan. Number-only: 6 digits = employee number,
+// 7 digits = position number, anything else = people text search (unchanged).
+const directoryQuerySchema = z.object({
+  search: z.string().trim().min(1),
+  schoolId: z.string().trim().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50)
+});
+
+const EMPLOYEE_NUMBER_RE = /^\d{6}$/;
+const POSITION_NUMBER_RE = /^\d{7}$/;
 
 const loginSchema = z.object({
   wakeId: z.string().trim().min(1),
@@ -494,6 +507,97 @@ export function createApp(
     }
   });
 
+  // ---- Unified Directory search (people + positions) ----
+  // Number-only classification:
+  //   ^\d{6}$ -> employee number -> people only
+  //   ^\d{7}$ -> position number -> positions only (incl. vacant seats)
+  //   anything else -> people text search (existing behaviour, unchanged)
+  // Position titles are deliberately NOT matched — a "Teacher" search returns
+  // hundreds of seats and was rejected. `pos_name` is displayed, never searched.
+  // A pasted position number has NO pos_ending filter: an ended seat still
+  // resolves ("if it is in the database, show it").
+  application.get('/api/directory', async (request, response, next) => {
+    try {
+      const query = directoryQuerySchema.parse(request.query);
+      const search = query.search.trim();
+
+      const scopedOrgNames = async (): Promise<string[] | undefined> => {
+        if (canViewAllSchools(request) || !hasSchoolScope(request)) return undefined;
+        const ids = callerSchoolIds(request);
+        const schools = await repositories.schools.list();
+        return schools.filter((school) => ids.includes(school.id)).map((school) => school.name);
+      };
+
+      const page = query.page;
+      const pageSize = query.pageSize;
+      const start = (page - 1) * pageSize;
+
+      // --- Position number: 7 digits ---
+      if (POSITION_NUMBER_RE.test(search)) {
+        const organizations = await scopedOrgNames();
+        const hits = await repositories.positions.search({ posNumber: search, organizations, limit: pageSize });
+        // Resolve each hit's organization id from its name so the client can
+        // open the Position Details drawer (which needs org + pos number).
+        const schools = await repositories.schools.list();
+        const data: DirectoryResult[] = hits.map((hit) => ({
+          kind: 'position' as const,
+          positionNumber: hit.positionNumber,
+          positionName: hit.positionName,
+          organization: hit.organization,
+          organizationId: schools.find((school) => school.name === hit.organization)?.id ?? '',
+          personId: null,
+          employeeNumber: hit.incumbentEmployeeNumber,
+          fullName: hit.incumbentName,
+          email: '',
+          vacant: hit.vacant
+        }));
+        response.json({
+          data: data.slice(start, start + pageSize),
+          page,
+          pageSize,
+          total: data.length,
+          counts: { people: 0, positions: data.length }
+        });
+        return;
+      }
+
+      // --- Employee number (6 digits) or free text: people ---
+      // 6-digit searches match the employee number exactly; text keeps the
+      // existing substring behaviour over name / employee number / organization.
+      const lower = search.toLowerCase();
+      const exactEmployee = EMPLOYEE_NUMBER_RE.test(search);
+      const people = (await repositories.people.list()).filter((person) => {
+        const matchesSearch = exactEmployee
+          ? person.employeeNumber === search
+          : [person.fullName, person.employeeNumber, person.organization]
+              .some((value) => value.toLowerCase().includes(lower));
+        const matchesSchool = !query.schoolId || person.organizationId === query.schoolId;
+        return matchesSearch && matchesSchool && orgIsVisible(request, person.organizationId);
+      });
+      const data: DirectoryResult[] = people.map((person) => ({
+        kind: 'person' as const,
+        personId: person.personId,
+        employeeNumber: person.employeeNumber,
+        fullName: person.fullName,
+        email: person.email,
+        organization: person.organization,
+        organizationId: person.organizationId,
+        positionName: person.positionName,
+        positionNumber: '',
+        vacant: false as const
+      }));
+      response.json({
+        data: data.slice(start, start + pageSize),
+        page,
+        pageSize,
+        total: data.length,
+        counts: { people: data.length, positions: 0 }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   application.get('/api/people/:personId', async (request, response, next) => {
     try {
       const person = (await repositories.people.list()).find((candidate) => candidate.personId === request.params.personId);
@@ -506,7 +610,6 @@ export function createApp(
       next(error);
     }
   });
-
   application.get('/api/people/:personId/record', async (request, response, next) => {
     try {
       const record = await repositories.personRecords.getByPersonId(request.params.personId);
