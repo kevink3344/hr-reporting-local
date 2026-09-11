@@ -14,6 +14,29 @@ export type Person = {
   activeAssignment: boolean;
 };
 
+// ---- Employee auto-lookup (future-incumbent form) ----
+// A single-employee lookup keyed by the 6-digit employee number. Deliberately
+// narrow: only the fields the "stage a new incumbent" form can pre-fill, so the
+// query stays a single indexed row read instead of hydrating a full
+// PersonRecord (which fans out to address/leaves/cert_info/cert_area).
+export type EmployeeLookup = {
+  employeeNumber: string;
+  fullName: string;
+  organization: string;
+  positionName: string;
+  /** employee_info.account_code — the person's own coded account. */
+  accountNumber: string;
+  contractType: string;
+  hireDate: string;
+};
+
+// Discriminated response so "no employee matched" is a normal 200 payload
+// rather than a thrown HTTP_404. The client's error branch stays reserved for
+// genuine failures (network / 5xx).
+export type EmployeeLookupResponse =
+  | { found: true; employee: EmployeeLookup }
+  | { found: false };
+
 export type School = {
   id: string;
   schoolNumber: string;

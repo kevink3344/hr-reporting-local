@@ -48,6 +48,7 @@ export const hybridRepositories: Repositories = {
   users: mysqlRepositories.users,
   futurePositions: tursoRepositories.futurePositions,
   featureFlags: tursoRepositories.featureFlags,
+  styleThemes: tursoRepositories.styleThemes,
   aiHistory: tursoRepositories.aiHistory,
 
   // ---- CONFIG: Turso, DATA: MySQL ----

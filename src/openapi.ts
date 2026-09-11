@@ -84,6 +84,38 @@ export const openApiDocument = {
         }
       }
     },
+    '/employees/lookup': {
+      get: {
+        tags: ['People'],
+        operationId: 'lookupEmployee',
+        summary: 'Look up a single employee by their 6-digit employee number',
+        description:
+          'Backs the future-incumbent form auto-fill. Returns a narrow projection ' +
+          '(name, organization, position, account number, contract type, hire date). ' +
+          'A miss is reported as 200 with `found: false` — not 404 — so the client can ' +
+          'render "No matches found" as an ordinary state. An employee outside the ' +
+          "caller's school scope also answers `found: false`.",
+        parameters: [
+          {
+            name: 'employeeNumber',
+            in: 'query',
+            required: true,
+            description: 'Exactly 6 digits. Leading zeros are significant.',
+            schema: { type: 'string', pattern: '^\\d{6}$' }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'Lookup result — `found` discriminates the union',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/EmployeeLookupResponse' } } }
+          },
+          '400': {
+            description: '`EMPLOYEE_NUMBER_INVALID` — the number was not exactly 6 digits',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          }
+        }
+      }
+    },
     '/schools': {
       get: {
         tags: ['Schools'],
@@ -520,6 +552,43 @@ export const openApiDocument = {
         type: 'object',
         required: ['ok', 'dataSource'],
         properties: { ok: { type: 'boolean' }, dataSource: { type: 'string', example: 'fixtures' } }
+      },
+      ErrorResponse: {
+        type: 'object',
+        required: ['error'],
+        properties: { error: { type: 'string', example: 'EMPLOYEE_NUMBER_INVALID' } }
+      },
+      EmployeeLookup: {
+        type: 'object',
+        required: ['employeeNumber', 'fullName', 'organization', 'positionName', 'accountNumber', 'contractType', 'hireDate'],
+        description: 'Narrow projection of a single employee, sized to what the future-incumbent form pre-fills.',
+        properties: {
+          employeeNumber: { type: 'string', example: '194121' },
+          fullName: { type: 'string', example: 'Streete, Noah Ryan' },
+          organization: { type: 'string', example: 'Athens High School - 318' },
+          positionName: { type: 'string', example: 'Clerical Assistant' },
+          accountNumber: { type: 'string', example: '02.5400.003.151.0109.0318' },
+          contractType: { type: 'string', example: 'NC' },
+          hireDate: { type: 'string', example: '2026-08-12' }
+        }
+      },
+      EmployeeLookupResponse: {
+        oneOf: [
+          {
+            type: 'object',
+            required: ['found', 'employee'],
+            properties: {
+              found: { type: 'boolean', enum: [true] },
+              employee: { $ref: '#/components/schemas/EmployeeLookup' }
+            }
+          },
+          {
+            type: 'object',
+            required: ['found'],
+            description: 'No employee carries that number, or the employee is outside the caller\'s school scope.',
+            properties: { found: { type: 'boolean', enum: [false] } }
+          }
+        ]
       },
       Person: {
         type: 'object',

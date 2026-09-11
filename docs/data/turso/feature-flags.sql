@@ -19,3 +19,7 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('future_positions', 0, datetime('now'));
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('ai_assistant', 0, datetime('now'));
+-- Sub-feature of future_positions: employee auto-lookup. Ships OFF.
+INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('employee_auto_lookup', 0, datetime('now'));
+-- Style Configuration: admin-authored CSS styles staff can apply. Ships OFF.
+INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('style_configuration', 0, datetime('now'));

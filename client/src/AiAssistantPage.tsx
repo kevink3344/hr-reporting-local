@@ -78,7 +78,8 @@ export function AiAssistantPage({ session }: { session: LoginSession }) {
     try {
       const entry = await askAi(session, text);
       setAnswer(entry);
-      setQuestion('');
+      // Keep the question in the textarea so the user can tweak it and ask a
+      // similar follow-up without retyping.
       await loadHistory();
     } catch (failure) {
       setError(errorMessage(failure, 'The question could not be answered.'));
@@ -122,7 +123,7 @@ export function AiAssistantPage({ session }: { session: LoginSession }) {
   return <section className="reports-page" aria-labelledby="ai-title">
     <div className="reports-page-heading">
       <div>
-        <p className="eyebrow">AI Assistant (Beta)</p>
+        <p className="eyebrow">AI Assistant (Development Only)</p>
         <h2 id="ai-title">Ask about your data.</h2>
         <p className="reports-intro">Describe what you are looking for in plain language. The assistant generates safe, read-only SQL against your district data and shows the answer below.</p>
       </div>

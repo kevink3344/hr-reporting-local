@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, GripVertical, Home, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
-import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
+import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, ChevronDown, ChevronUp, ClipboardCheck, Copy, Eye, EyeOff, FileText, Flag, GripVertical, Home, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
+import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
 import type { FuturePosition, FuturePositionStatus, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
 import { FuturePositionsPage } from './FuturePositionsPage';
 import { ReportsPage } from './ReportsPage';
 import { SettingsPage } from './SettingsPage';
+import { FeaturesPage } from './FeaturesPage';
+import { StyleConfigurationPage } from './StyleConfigurationPage';
 import { AiAssistantPage } from './AiAssistantPage';
 import { UserSettingsPage } from './UserSettingsPage';
 import { SchoolCombobox } from './SchoolCombobox';
 import { DEFAULT_RECORD_LAYOUT, RECORD_SECTION_TITLES, arraysEqual, hiddenSectionIds, loadRecordLayout, reorderVisibleSections, resetRecordLayout, saveRecordLayout, setSectionVisible, showAllSections, visibleSectionIds } from './recordLayout';
 import type { RecordLayout, RecordSectionId } from './recordLayout';
 import { DEFAULT_SECTION_COLORS, SECTION_COLOR_OPTIONS, clearSectionColor, loadSectionColors, saveSectionColor, sectionHeaderColor } from './sectionColors';
+import { BUILT_IN_STYLES, DEFAULT_STYLE, applyStyle, loadLastAppliedStyle, loadStyleId, themeToDefinition } from './styleThemes';
 import { loadHomePage, saveHomePage } from './homePage';
 import type { HomePage } from './homePage';
 import { addRecentPerson, clearRecentPeople, loadRecentPeople, removeRecentPerson } from './recentPeople';
@@ -877,7 +880,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'home' | 'reports' | 'positions' | 'settings' | 'future-positions' | 'ai'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'reports' | 'positions' | 'settings' | 'future-positions' | 'ai' | 'style-config' | 'features'>('home');
   const [homePage, setHomePage] = useState<HomePage>('home');
   const [userSettingsOpen, setUserSettingsOpen] = useState(false);
   const [positionPinsCount, setPositionPinsCount] = useState(0);
@@ -887,6 +890,8 @@ export function App() {
   const [futureEnabled, setFutureEnabled] = useState(false);
   // Feature flags — AI Assistant toggle (admin-controlled, gates the AI nav + page).
   const [aiEnabled, setAiEnabled] = useState(false);
+  // Feature flags — Style Configuration toggle (admin-controlled, gates the nav + page).
+  const [styleConfigEnabled, setStyleConfigEnabled] = useState(false);
   // System-wide messages: active announcements loaded from the server, plus
   // the set the current user has dismissed (per-user, persisted in localStorage).
   const [systemMessages, setSystemMessages] = useState<SystemMessage[]>([]);
@@ -956,15 +961,36 @@ export function App() {
 
   // Load the feature flags on user change.
   useEffect(() => {
-    if (!session) { setFutureEnabled(false); setAiEnabled(false); return; }
+    if (!session) { setFutureEnabled(false); setAiEnabled(false); setStyleConfigEnabled(false); return; }
     let cancelled = false;
     getFeatureFlag(session)
       .then((flags) => {
         if (cancelled) return;
         setFutureEnabled(flags.future_positions);
         setAiEnabled(flags.ai_assistant);
+        setStyleConfigEnabled(flags.style_configuration);
       })
-      .catch(() => { if (!cancelled) { setFutureEnabled(false); setAiEnabled(false); } });
+      .catch(() => { if (!cancelled) { setFutureEnabled(false); setAiEnabled(false); setStyleConfigEnabled(false); } });
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
+  // Apply the signed-in user's saved style. Built-in styles resolve locally;
+  // an admin-authored style is fetched from the server. Falls back to default.
+  // On the sign-in screen (no session) we re-apply the last style used on this
+  // device from the local cache so the login screen matches the workspace.
+  useEffect(() => {
+    if (!session) { applyStyle(loadLastAppliedStyle()); return; }
+    const styleId = loadStyleId(session.user.id);
+    const builtIn = BUILT_IN_STYLES.find((style) => style.id === styleId);
+    if (builtIn) { applyStyle(builtIn); return; }
+    let cancelled = false;
+    getStyleThemes(session)
+      .then((themes) => {
+        if (cancelled) return;
+        const theme = themes.find((item) => item.id === styleId);
+        applyStyle(theme ? themeToDefinition(theme) : DEFAULT_STYLE);
+      })
+      .catch(() => { if (!cancelled) applyStyle(DEFAULT_STYLE); });
     return () => { cancelled = true; };
   }, [session?.user?.id]);
 
@@ -1100,10 +1126,12 @@ export function App() {
     } catch { /* ignore */ }
   }
 
-  function navigate(view: 'home' | 'reports' | 'positions' | 'settings' | 'future-positions' | 'ai') {
+  function navigate(view: 'home' | 'reports' | 'positions' | 'settings' | 'future-positions' | 'ai' | 'style-config' | 'features') {
     if (view === 'settings' && !isAdmin) return;
     if (view === 'future-positions' && !isDataTeam) return;
     if (view === 'ai' && !aiEnabled) return;
+    if (view === 'style-config' && !styleConfigEnabled) return;
+    if (view === 'features' && !isAdmin) return;
     setActiveView(view);
     setMenuOpen(false);
   }
@@ -1351,7 +1379,7 @@ export function App() {
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
       <aside className={`side-navigation ${menuOpen ? 'open' : ''}`} aria-label="Main navigation">
         <div className="side-navigation-heading"><strong>HR Reporting</strong><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={17} /></button></div>
-        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{isDataTeam && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions (Beta)</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant (Beta)</span></button>}</nav>
+        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{isDataTeam && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions (Beta)</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{isAdmin && <button className={activeView === 'features' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('features')}><Flag size={18} /><span>Features</span></button>}{styleConfigEnabled && <button className={activeView === 'style-config' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('style-config')}><Palette size={18} /><span>Style Configuration</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant (Development Only)</span></button>}</nav>
       </aside>
       <header className="topbar">
         <button className="icon-button menu-trigger" onClick={() => setMenuOpen(true)} aria-label="Open navigation" title="Open navigation"><Menu size={21} /></button>
@@ -1389,7 +1417,7 @@ export function App() {
         </div>
       )}
 
-      {activeView === 'reports' ? <ReportsPage schools={schools} session={session} onManage={isAdmin ? () => navigate('settings') : undefined} onOpenRecord={openRecordByEmployeeNumber} onOpenPosition={openPositionByNumber} /> : activeView === 'positions' ? <PositionsPage session={session} schools={schools} onOpenPosition={openPositionByNumber} /> : activeView === 'future-positions' ? (isDataTeam && session ? <FuturePositionsPage session={session} onOpenPosition={openPositionByNumber} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Data team access is required.</span></div></section>) : activeView === 'settings' ? (isAdmin && session ? <SettingsPage session={session} schools={schools} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : activeView === 'ai' ? (aiEnabled && session ? <AiAssistantPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. The AI Assistant is disabled.</span></div></section>) : <>
+      {activeView === 'reports' ? <ReportsPage schools={schools} session={session} onManage={isAdmin ? () => navigate('settings') : undefined} onOpenRecord={openRecordByEmployeeNumber} onOpenPosition={openPositionByNumber} /> : activeView === 'positions' ? <PositionsPage session={session} schools={schools} onOpenPosition={openPositionByNumber} /> : activeView === 'future-positions' ? (isDataTeam && session ? <FuturePositionsPage session={session} onOpenPosition={openPositionByNumber} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Data team access is required.</span></div></section>) : activeView === 'settings' ? (isAdmin && session ? <SettingsPage session={session} schools={schools} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : activeView === 'ai' ? (aiEnabled && session ? <AiAssistantPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. The AI Assistant is disabled.</span></div></section>) : activeView === 'style-config' ? (styleConfigEnabled && session ? <StyleConfigurationPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Style Configuration is disabled.</span></div></section>) : activeView === 'features' ? (isAdmin && session ? <FeaturesPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : <>
       <section className="hero-band">
         <div>
           <p className="eyebrow">People directory</p>

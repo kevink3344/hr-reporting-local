@@ -4,7 +4,7 @@ import { validateAiSql } from '../reports-sql.js';
 import { bindNamedParam } from '../reports-sql.js';
 import { query } from '../db.js';
 import type { AiHistoryEntry, Repositories } from '../repositories/contracts.js';
-import { REPORT_ROW_CAP } from '../reports-sql.js';
+import { REPORT_ROW_CAP, nowIso } from '../reports-sql.js';
 
 // Error codes surfaced to the client via repoErrorToStatus in app.ts.
 export const AI_NOT_CONFIGURED = 'AI_NOT_CONFIGURED';
@@ -230,18 +230,56 @@ Rules:
   const answerRaw = await chat(answerSystem, `Question: ${trimmed}\n\nSQL:\n${sql}\n\nRows (${rowCount}):\n${JSON.stringify(executed.slice(0, 50))}`);
   const answer = stripCodeBlock(answerRaw);
 
-  const entry = await repositories.aiHistory.create({
-    userId,
-    question: trimmed,
-    answer,
-    sql,
-    rowCount,
-    columns,
-    rows: executed,
-    model: getAiConfig().model
-  });
+  // Persist the ask so the client can show "recent searches". If the
+  // ask_history table has not been created yet (DBA migration pending), the
+  // answer is still returned — history is simply not saved.
+  try {
+    const entry = await repositories.aiHistory.create({
+      userId,
+      question: trimmed,
+      answer,
+      sql,
+      rowCount,
+      columns,
+      rows: executed,
+      model: getAiConfig().model
+    });
+    return entry;
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error;
+    return {
+      id: '',
+      userId,
+      question: trimmed,
+      answer,
+      sql,
+      rowCount,
+      columns,
+      rows: executed,
+      model: getAiConfig().model,
+      createdAt: nowIso()
+    };
+  }
+}
 
-  return entry;
+/**
+ * True when the error means the table isn't usable yet — either it doesn't
+ * exist (MySQL 1146 / SQLite "no such table") or the app user has no grants
+ * on it (MySQL 1142). Lets the AI Assistant keep working (history unsaved)
+ * before the DBA has created ask_history.
+ */
+function isMissingTableError(error: unknown): boolean {
+  const code = (error as { code?: string; errno?: number } | null)?.code;
+  const errno = (error as { errno?: number } | null)?.errno;
+  const message = error instanceof Error ? error.message : '';
+  return (
+    code === 'ER_NO_SUCH_TABLE' ||
+    code === 'ER_TABLEACCESS_DENIED_ERROR' ||
+    errno === 1146 ||
+    errno === 1142 ||
+    /no such table/i.test(message) ||
+    /command denied to user .* for table/i.test(message)
+  );
 }
 
 export async function listHistory(
@@ -249,7 +287,13 @@ export async function listHistory(
   userId: string,
   limit = 20
 ) {
-  return repositories.aiHistory.list(userId, limit);
+  try {
+    return await repositories.aiHistory.list(userId, limit);
+  } catch (error) {
+    // History table not created yet (DBA migration pending) -> empty list.
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
 }
 
 export async function getHistory(
@@ -257,7 +301,12 @@ export async function getHistory(
   id: string,
   userId: string
 ): Promise<AiHistoryEntry | null> {
-  return repositories.aiHistory.getById(id, userId);
+  try {
+    return await repositories.aiHistory.getById(id, userId);
+  } catch (error) {
+    if (isMissingTableError(error)) return null;
+    throw error;
+  }
 }
 
 export async function deleteHistory(
@@ -265,5 +314,10 @@ export async function deleteHistory(
   id: string,
   userId: string
 ): Promise<boolean> {
-  return repositories.aiHistory.delete(id, userId);
+  try {
+    return await repositories.aiHistory.delete(id, userId);
+  } catch (error) {
+    if (isMissingTableError(error)) return false;
+    throw error;
+  }
 }

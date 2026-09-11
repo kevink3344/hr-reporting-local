@@ -57,6 +57,23 @@ export type SystemUserInput = {
   canViewAllSchools?: boolean;
 };
 
+// ---- Employee auto-lookup (future-incumbent form) ----
+// Mirrors server src/types.ts. Returned by GET /api/employees/lookup, keyed by
+// the 6-digit employee number.
+export type EmployeeLookup = {
+  employeeNumber: string;
+  fullName: string;
+  organization: string;
+  positionName: string;
+  accountNumber: string;
+  contractType: string;
+  hireDate: string;
+};
+
+export type EmployeeLookupResponse =
+  | { found: true; employee: EmployeeLookup }
+  | { found: false };
+
 export type School = {
   id: string;
   schoolNumber: string;
@@ -436,9 +453,51 @@ export type FeatureFlag = {
 };
 
 // GET /api/feature-flags now returns a map of every known flag.
+// employee_auto_lookup is a sub-feature of future_positions: the Future
+// Positions beta can be on while employee auto-lookup stays off.
 export type FeatureFlagsResponse = {
   future_positions: boolean;
   ai_assistant: boolean;
+  employee_auto_lookup: boolean;
+  style_configuration: boolean;
+};
+
+// ---- Style Configuration ----
+// A named CSS style staff can apply. The built-in "default" style is implicit
+// (no row); every other entry is an admin-authored style. mainFont drives body
+// + heading typography; monoFont drives numbers/codes (employee numbers,
+// account codes, etc.).
+export type StyleTheme = {
+  id: string;
+  name: string;
+  description: string | null;
+  mainFont: string;
+  monoFont: string;
+  primaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  textColor: string;
+  /** Corner radius (px) for controls. */
+  radius: number;
+  /** When true, the decorative background gradient is removed (flat/clear background). */
+  noBackgroundImage: boolean;
+  isDefault: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StyleThemeInput = {
+  name: string;
+  description?: string | null;
+  mainFont: string;
+  monoFont: string;
+  primaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  textColor: string;
+  radius?: number;
+  noBackgroundImage?: boolean;
 };
 
 // ---- AI Assistant ----

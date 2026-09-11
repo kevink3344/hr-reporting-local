@@ -222,6 +222,33 @@ async function requireAiAssistantEnabled(repositories: Repositories): Promise<{ 
   return { enabled: true };
 }
 
+/** Feature gate for Style Configuration. Returns null when the flag is off. */
+async function requireStyleConfigurationEnabled(repositories: Repositories): Promise<{ enabled: boolean } | null> {
+  const flag = await repositories.featureFlags.get('style_configuration');
+  if (!flag?.enabled) return null;
+  return { enabled: true };
+}
+
+/**
+ * True when the error means the table isn't usable yet — either it doesn't
+ * exist (MySQL 1146 / SQLite "no such table") or the app user has no grants
+ * on it (MySQL 1142, which is what an uncreated table reports for INSERT).
+ * Used to degrade gracefully before the DBA has created a new table.
+ */
+function isMissingTableError(error: unknown): boolean {
+  const code = (error as { code?: string; errno?: number } | null)?.code;
+  const errno = (error as { errno?: number } | null)?.errno;
+  const message = error instanceof Error ? error.message : '';
+  return (
+    code === 'ER_NO_SUCH_TABLE' ||
+    code === 'ER_TABLEACCESS_DENIED_ERROR' ||
+    errno === 1146 ||
+    errno === 1142 ||
+    /no such table/i.test(message) ||
+    /command denied to user .* for table/i.test(message)
+  );
+}
+
 function stripSqlForReader<T extends { sqlQuery?: string; subreportQuery?: string }>(report: T, admin: boolean): T {
   if (admin) return report;
   const { sqlQuery: _omitted, subreportQuery: _omittedSub, ...rest } = report;
@@ -369,6 +396,24 @@ const featureFlagPatchSchema = z.object({
   enabled: z.boolean()
 });
 
+// ---- Style Configuration ----
+// A style theme is a named CSS style staff can apply. mainFont drives body +
+// headings; monoFont drives numbers/codes. Colors are hex strings.
+const hexColorSchema = z.string().trim().regex(/^#[0-9a-fA-F]{3,8}$/, 'INVALID_COLOR');
+const styleThemeSchema = z.object({
+  name: z.string().trim().min(1).max(128),
+  description: z.string().trim().max(255).nullable().optional(),
+  mainFont: z.string().trim().min(1).max(255),
+  monoFont: z.string().trim().min(1).max(255),
+  primaryColor: hexColorSchema,
+  accentColor: hexColorSchema,
+  backgroundColor: hexColorSchema,
+  textColor: hexColorSchema,
+  radius: z.number().int().min(0).max(40).optional(),
+  noBackgroundImage: z.boolean().optional()
+});
+const styleThemeUpdateSchema = styleThemeSchema.partial();
+
 const aiAskSchema = z.object({
   question: z.string().trim().min(1).max(2000)
 });
@@ -470,6 +515,40 @@ export function createApp(
         return;
       }
       response.json(record);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ---- Employee auto-lookup (future-incumbent form) ----
+  // Narrow single-row lookup keyed by the 6-digit employee number. A miss is a
+  // normal 200 `{ found: false }` (NOT 404) so the SPA can show "No matches
+  // found" instead of throwing. Out-of-scope employees also answer
+  // `found:false` so the endpoint can't probe existence outside the caller's
+  // schools.
+  application.get('/api/employees/lookup', async (request, response, next) => {
+    try {
+      const raw = typeof request.query.employeeNumber === 'string' ? request.query.employeeNumber.trim() : '';
+      if (!/^\d{6}$/.test(raw)) {
+        response.status(400).json({ error: 'EMPLOYEE_NUMBER_INVALID' });
+        return;
+      }
+      const employee = await repositories.people.findByEmployeeNumber(raw);
+      if (!employee) {
+        response.json({ found: false });
+        return;
+      }
+      // Scope check: resolve the employee's org NAME to a school id and apply
+      // the same visibility rule as the other list endpoints.
+      if (hasSchoolScope(request) && !canViewAllSchools(request)) {
+        const schools = await repositories.schools.list();
+        const match = schools.find((school) => school.name === employee.organization);
+        if (!match || !callerSchoolIds(request).includes(match.id)) {
+          response.json({ found: false });
+          return;
+        }
+      }
+      response.json({ found: true, employee });
     } catch (error) {
       next(error);
     }
@@ -1337,13 +1416,17 @@ export function createApp(
   // gate all optional features in one call.
   application.get('/api/feature-flags', async (_request, response, next) => {
     try {
-      const [futurePositions, aiAssistant] = await Promise.all([
+      const [futurePositions, autoLookup, aiAssistant, styleConfiguration] = await Promise.all([
         repositories.featureFlags.get('future_positions'),
-        repositories.featureFlags.get('ai_assistant')
+        repositories.featureFlags.get('employee_auto_lookup'),
+        repositories.featureFlags.get('ai_assistant'),
+        repositories.featureFlags.get('style_configuration')
       ]);
       response.json({
         future_positions: futurePositions?.enabled ?? false,
-        ai_assistant: aiAssistant?.enabled ?? false
+        employee_auto_lookup: autoLookup?.enabled ?? false,
+        ai_assistant: aiAssistant?.enabled ?? false,
+        style_configuration: styleConfiguration?.enabled ?? false
       });
     } catch (error) {
       const mapped = repoErrorToStatus(error);
@@ -1355,7 +1438,7 @@ export function createApp(
   application.patch('/api/feature-flags/:key', requireAdmin, async (request, response, next) => {
     try {
       const key = routeId(request.params.key);
-      if (key !== 'future_positions' && key !== 'ai_assistant') {
+      if (key !== 'future_positions' && key !== 'employee_auto_lookup' && key !== 'ai_assistant' && key !== 'style_configuration') {
         response.status(404).json({ error: 'FEATURE_NOT_FOUND' });
         return;
       }
@@ -1363,6 +1446,75 @@ export function createApp(
       const flag = await repositories.featureFlags.set(key, patch.enabled, callerId(request));
       response.json(flag);
     } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  // ---- Style Configuration (admin-authored CSS styles) ----
+  // Any authenticated user may READ the available styles so staff can apply
+  // one; only an admin may create / update / delete. Gated by the
+  // style_configuration feature flag.
+  application.get('/api/style-themes', async (_request, response, next) => {
+    try {
+      const gate = await requireStyleConfigurationEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const themes = await repositories.styleThemes.list();
+      response.json(themes);
+    } catch (error) {
+      // Graceful degradation: if the style_themes table has not been created
+      // yet (DBA migration pending), return an empty list so the built-in
+      // styles still work instead of failing the whole page.
+      if (isMissingTableError(error)) { response.json([]); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.post('/api/style-themes', requireAdmin, async (request, response, next) => {
+    try {
+      const gate = await requireStyleConfigurationEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const input = styleThemeSchema.parse(request.body);
+      const created = await repositories.styleThemes.create(input, callerId(request));
+      response.status(201).json(created);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'STYLE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.patch('/api/style-themes/:id', requireAdmin, async (request, response, next) => {
+    try {
+      const gate = await requireStyleConfigurationEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const id = routeId(request.params.id);
+      const patch = styleThemeUpdateSchema.parse(request.body);
+      const updated = await repositories.styleThemes.update(id, patch);
+      if (!updated) { response.status(404).json({ error: 'STYLE_NOT_FOUND' }); return; }
+      response.json(updated);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'STYLE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.delete('/api/style-themes/:id', requireAdmin, async (request, response, next) => {
+    try {
+      const gate = await requireStyleConfigurationEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+      const id = routeId(request.params.id);
+      const removed = await repositories.styleThemes.delete(id);
+      if (!removed) { response.status(404).json({ error: 'STYLE_NOT_FOUND' }); return; }
+      response.status(204).end();
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'STYLE_STORAGE_NOT_READY' }); return; }
       const mapped = repoErrorToStatus(error);
       if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
       next(error);

@@ -43,7 +43,8 @@ import type {
   SystemUserUpdate,
   AiHistoryEntry,
   AiHistoryInput,
-  AiHistoryListItem
+  AiHistoryListItem,
+  StyleTheme
 } from './contracts.js';
 import { REPORT_ROW_CAP, bindOrganization, newId, nowIso, validateReportSql, validateSubreportSql } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
@@ -285,7 +286,23 @@ function toOpenPositionRun(report: ReportDefinition, organization: string): Gene
 }
 
 export const fixtureRepositories: Repositories = {
-  people: { list: () => readFixture<Person>('people.json') },
+  people: {
+    list: () => readFixture<Person>('people.json'),
+    async findByEmployeeNumber(employeeNumber) {
+      const people = await readFixture<Person>('people.json');
+      const match = people.find((person) => person.employeeNumber === employeeNumber);
+      if (!match) return null;
+      return {
+        employeeNumber: match.employeeNumber,
+        fullName: match.fullName,
+        organization: match.organization,
+        positionName: match.positionName,
+        accountNumber: `${match.costCenter ?? ''}-${match.objectCode ?? ''}`,
+        contractType: '',
+        hireDate: ''
+      };
+    }
+  },
   schools: { list: () => readFixture<School>('schools.json') },
   personRecords: {
     async getByPersonId(personId) {
@@ -496,6 +513,7 @@ export const fixtureRepositories: Repositories = {
   users: buildFixtureUsers(),
   futurePositions: buildFixtureFuturePositions(),
   featureFlags: buildFixtureFeatureFlags(),
+  styleThemes: buildFixtureStyleThemes(),
   aiHistory: buildFixtureAiHistory()
 };
 
@@ -1135,6 +1153,73 @@ function buildFixtureFeatureFlags(): Repositories['featureFlags'] {
       };
       fixtureFeatureFlags.set(key, next);
       return { ...next };
+    }
+  };
+}
+
+// ---- Style themes (Style Configuration) ----
+// In-memory store for fixture mode. The built-in "default" style is implicit
+// (no row) so only admin-authored styles live here.
+const fixtureStyleThemes = new Map<string, StyleTheme>();
+
+function buildFixtureStyleThemes(): Repositories['styleThemes'] {
+  return {
+    async list() {
+      return [...fixtureStyleThemes.values()]
+        .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name))
+        .map((theme) => ({ ...theme }));
+    },
+    async getById(id) {
+      const theme = fixtureStyleThemes.get(id);
+      return theme ? { ...theme } : null;
+    },
+    async create(input, createdBy) {
+      const now = nowIso();
+      const theme: StyleTheme = {
+        id: newId(),
+        name: input.name,
+        description: input.description ?? null,
+        mainFont: input.mainFont,
+        monoFont: input.monoFont,
+        primaryColor: input.primaryColor,
+        accentColor: input.accentColor,
+        backgroundColor: input.backgroundColor,
+        textColor: input.textColor,
+        radius: input.radius ?? 8,
+        noBackgroundImage: input.noBackgroundImage ?? false,
+        isDefault: false,
+        createdBy,
+        createdAt: now,
+        updatedAt: now
+      };
+      fixtureStyleThemes.set(theme.id, theme);
+      return { ...theme };
+    },
+    async update(id, input) {
+      const existing = fixtureStyleThemes.get(id);
+      if (!existing) return null;
+      const next: StyleTheme = {
+        ...existing,
+        name: input.name ?? existing.name,
+        description: input.description !== undefined ? input.description : existing.description,
+        mainFont: input.mainFont ?? existing.mainFont,
+        monoFont: input.monoFont ?? existing.monoFont,
+        primaryColor: input.primaryColor ?? existing.primaryColor,
+        accentColor: input.accentColor ?? existing.accentColor,
+        backgroundColor: input.backgroundColor ?? existing.backgroundColor,
+        textColor: input.textColor ?? existing.textColor,
+        radius: input.radius ?? existing.radius,
+        noBackgroundImage: input.noBackgroundImage !== undefined ? input.noBackgroundImage : existing.noBackgroundImage,
+        updatedAt: nowIso()
+      };
+      fixtureStyleThemes.set(id, next);
+      return { ...next };
+    },
+    async delete(id) {
+      const existing = fixtureStyleThemes.get(id);
+      if (!existing || existing.isDefault) return false;
+      fixtureStyleThemes.delete(id);
+      return true;
     }
   };
 }

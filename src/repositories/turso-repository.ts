@@ -42,7 +42,8 @@ import type {
   SystemMessageUpdate,
   SystemUserInput,
   SystemUserUpdate,
-  AiHistoryEntry
+  AiHistoryEntry,
+  StyleTheme
 } from './contracts.js';
 import { getLibsqlClient, query } from '../db-turso.js';
 import { viewDefinitionSchema } from '../report-views.js';
@@ -381,6 +382,17 @@ type SchoolRow = {
   school_level: string | null;
 };
 
+// Narrow projection for the employee auto-lookup (single indexed row read).
+type EmployeeLookupRow = {
+  emp_number: string | null;
+  full_name: string | null;
+  organization: string | null;
+  pos_name: string | null;
+  account_code: string | null;
+  contract_type: string | null;
+  hire_date: string | null;
+};
+
 type AddressRow = {
   person_id: string | null;
   address: string | null;
@@ -439,6 +451,32 @@ export const tursoRepositories: Repositories = {
     async list() {
       const rows = await query<EmployeeRow>('SELECT * FROM employee_info');
       return Promise.all(rows.map(toPerson));
+    },
+    async findByEmployeeNumber(employeeNumber) {
+      // Narrow, indexed single-row read for the auto-fill lookup. SQLite
+      // compares a TEXT column against the bound string by storage class, so
+      // leading zeros stay significant. `employee_info` is per-assignment, so
+      // LIMIT 1 + a deterministic ORDER BY picks the primary assignment.
+      const rows = await query<EmployeeLookupRow>(
+        `SELECT emp_number, full_name, organization, pos_name, account_code, contract_type, hire_date
+           FROM employee_info
+          WHERE emp_number = ?
+          ORDER BY CASE WHEN primary_flag = 'Y' THEN 0 ELSE 1 END,
+                   COALESCE(pos_number, '1'),
+                   COALESCE(hire_date, '9999-12-31')
+          LIMIT 1`,
+        [employeeNumber]
+      );
+      if (!rows[0]) return null;
+      return {
+        employeeNumber: String(rows[0].emp_number ?? employeeNumber),
+        fullName: String(rows[0].full_name ?? ''),
+        organization: String(rows[0].organization ?? ''),
+        positionName: String(rows[0].pos_name ?? ''),
+        accountNumber: String(rows[0].account_code ?? ''),
+        contractType: String(rows[0].contract_type ?? ''),
+        hireDate: rows[0].hire_date ? String(rows[0].hire_date) : ''
+      };
     }
   },
   schools: {
@@ -1379,6 +1417,60 @@ export const tursoRepositories: Repositories = {
       return toFeatureFlag(rows[0]);
     }
   },
+  styleThemes: {
+    async list() {
+      const rows = await query<StyleThemeRow>('SELECT * FROM style_themes ORDER BY is_default DESC, name ASC');
+      return rows.map(toStyleTheme);
+    },
+    async getById(id) {
+      const rows = await query<StyleThemeRow>('SELECT * FROM style_themes WHERE id = ? LIMIT 1', [id]);
+      return rows[0] ? toStyleTheme(rows[0]) : null;
+    },
+    async create(input, createdBy) {
+      const id = newId();
+      const now = nowIso();
+      await query(
+        `INSERT INTO style_themes
+          (id, name, description, main_font, mono_font, primary_color, accent_color, background_color, text_color, radius, no_background_image, is_default, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        [id, input.name, dbValue(input.description ?? null), input.mainFont, input.monoFont, input.primaryColor, input.accentColor, input.backgroundColor, input.textColor, input.radius ?? 8, input.noBackgroundImage ? 1 : 0, dbValue(createdBy), now, now]
+      );
+      const rows = await query<StyleThemeRow>('SELECT * FROM style_themes WHERE id = ? LIMIT 1', [id]);
+      return toStyleTheme(rows[0]);
+    },
+    async update(id, input) {
+      const existing = await query<StyleThemeRow>('SELECT * FROM style_themes WHERE id = ? LIMIT 1', [id]);
+      if (!existing[0]) return null;
+      const current = toStyleTheme(existing[0]);
+      await query(
+        `UPDATE style_themes SET name = ?, description = ?, main_font = ?, mono_font = ?,
+           primary_color = ?, accent_color = ?, background_color = ?, text_color = ?, radius = ?, no_background_image = ?, updated_at = ? WHERE id = ?`,
+        [
+          input.name ?? current.name,
+          dbValue(input.description !== undefined ? input.description : current.description),
+          input.mainFont ?? current.mainFont,
+          input.monoFont ?? current.monoFont,
+          input.primaryColor ?? current.primaryColor,
+          input.accentColor ?? current.accentColor,
+          input.backgroundColor ?? current.backgroundColor,
+          input.textColor ?? current.textColor,
+          input.radius ?? current.radius,
+          (input.noBackgroundImage !== undefined ? input.noBackgroundImage : current.noBackgroundImage) ? 1 : 0,
+          nowIso(),
+          id
+        ]
+      );
+      const rows = await query<StyleThemeRow>('SELECT * FROM style_themes WHERE id = ? LIMIT 1', [id]);
+      return toStyleTheme(rows[0]);
+    },
+    async delete(id) {
+      const rows = await query<StyleThemeRow>('SELECT id, is_default FROM style_themes WHERE id = ? LIMIT 1', [id]);
+      if (!rows[0]) return false;
+      if ((rows[0].is_default ?? 0) === 1) return false;
+      await query('DELETE FROM style_themes WHERE id = ?', [id]);
+      return true;
+    }
+  },
   aiHistory: {
     async create(input) {
       const id = newId();
@@ -1447,6 +1539,45 @@ function toFeatureFlag(row: FeatureFlagRow): FeatureFlag {
     enabled: (row.enabled ?? 0) === 1,
     updatedBy: row.updated_by ? String(row.updated_by) : null,
     updatedAt: row.updated_at ? String(row.updated_at) : null
+  };
+}
+
+// ---- Style themes (Style Configuration) ----
+type StyleThemeRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  main_font: string;
+  mono_font: string;
+  primary_color: string;
+  accent_color: string;
+  background_color: string;
+  text_color: string;
+  radius: number | null;
+  no_background_image: number | null;
+  is_default: number | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+function toStyleTheme(row: StyleThemeRow): StyleTheme {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    description: row.description ? String(row.description) : null,
+    mainFont: String(row.main_font),
+    monoFont: String(row.mono_font),
+    primaryColor: String(row.primary_color),
+    accentColor: String(row.accent_color),
+    backgroundColor: String(row.background_color),
+    textColor: String(row.text_color),
+    radius: typeof row.radius === 'number' ? row.radius : Number(row.radius ?? 8) || 8,
+    noBackgroundImage: (row.no_background_image ?? 0) === 1,
+    isDefault: (row.is_default ?? 0) === 1,
+    createdBy: row.created_by ? String(row.created_by) : null,
+    createdAt: row.created_at ? String(row.created_at) : '',
+    updatedAt: row.updated_at ? String(row.updated_at) : ''
   };
 }
 

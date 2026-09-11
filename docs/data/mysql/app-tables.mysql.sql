@@ -42,6 +42,7 @@ DROP TABLE IF EXISTS position_pins;
 DROP TABLE IF EXISTS system_messages;
 DROP TABLE IF EXISTS future_positions;
 DROP TABLE IF EXISTS feature_flags;
+DROP TABLE IF EXISTS style_themes;
 DROP TABLE IF EXISTS users;
 
 -- =====================================================================
@@ -82,6 +83,33 @@ CREATE TABLE IF NOT EXISTS feature_flags (
   updated_by     VARCHAR(64) NULL,
   updated_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
                     ON UPDATE CURRENT_TIMESTAMP(3)
+);
+
+-- =====================================================================
+-- style_themes — admin-authored CSS styles (Style Configuration)
+--   The built-in "default" style is implicit (no row); every row here is an
+--   admin-created style staff can apply. `main_font` drives body/heading
+--   typography and `mono_font` drives numbers/codes (employee numbers,
+--   account codes, etc.). Colors are hex strings.
+--   NOTE: MariaDB 5.5 does NOT support DATETIME(3) / CURRENT_TIMESTAMP(3),
+--   so timestamps are plain DATETIME and the app supplies them explicitly.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS style_themes (
+  id             VARCHAR(64) PRIMARY KEY,
+  name           VARCHAR(128) NOT NULL,
+  description    VARCHAR(255) NULL,
+  main_font      VARCHAR(255) NOT NULL,
+  mono_font      VARCHAR(255) NOT NULL,
+  primary_color  VARCHAR(32) NOT NULL,
+  accent_color   VARCHAR(32) NOT NULL,
+  background_color VARCHAR(32) NOT NULL,
+  text_color     VARCHAR(32) NOT NULL,
+  radius         INT NOT NULL DEFAULT 8,
+  no_background_image TINYINT(1) NOT NULL DEFAULT 0,
+  is_default     TINYINT(1) NOT NULL DEFAULT 0,
+  created_by     VARCHAR(64) NULL,
+  created_at     DATETIME NOT NULL,
+  updated_at     DATETIME NOT NULL
 );
 
 -- =====================================================================

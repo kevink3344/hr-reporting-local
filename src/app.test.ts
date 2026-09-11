@@ -64,6 +64,64 @@ describe('HR Reporting API foundation', () => {
     expect(await response.json()).toEqual({ error: 'PERSON_NOT_FOUND' });
   });
 
+  describe('GET /api/employees/lookup', () => {
+    it('returns the narrow projection for a matching 6-digit employee number', async () => {
+      const response = await fetch(`${baseUrl}/api/employees/lookup?employeeNumber=900001`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        found: true,
+        employee: {
+          employeeNumber: '900001',
+          fullName: 'Example, Alex',
+          organization: 'Test Oak Elementary',
+          positionName: 'Teacher'
+        }
+      });
+    });
+
+    it('reports a miss as 200 with found:false so the client can show "No matches found"', async () => {
+      const response = await fetch(`${baseUrl}/api/employees/lookup?employeeNumber=999999`);
+      // A 404 here would surface as a thrown error in the SPA; a miss is a
+      // normal outcome, not a failure.
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ found: false });
+    });
+
+    it.each(['12345', '1234567', 'abc123', ''])('rejects the malformed number %j', async (employeeNumber) => {
+      const response = await fetch(`${baseUrl}/api/employees/lookup?employeeNumber=${encodeURIComponent(employeeNumber)}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'EMPLOYEE_NUMBER_INVALID' });
+    });
+
+    it('treats a missing employeeNumber parameter as invalid', async () => {
+      const response = await fetch(`${baseUrl}/api/employees/lookup`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'EMPLOYEE_NUMBER_INVALID' });
+    });
+
+    it('keeps leading zeros significant', async () => {
+      // No fixture employee is numbered 000000, but the point is the shape
+      // survives validation as a string instead of being coerced to 0.
+      const response = await fetch(`${baseUrl}/api/employees/lookup?employeeNumber=000000`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ found: false });
+    });
+
+    it('hides employees outside the caller school scope', async () => {
+      const inScope = await fetch(`${baseUrl}/api/employees/lookup?employeeNumber=900001`, {
+        headers: { 'x-user-school-ids': 'school-001', 'x-user-view-all': '0' }
+      });
+      expect(inScope.status).toBe(200);
+      expect(await inScope.json()).toMatchObject({ found: true });
+
+      const outOfScope = await fetch(`${baseUrl}/api/employees/lookup?employeeNumber=900001`, {
+        headers: { 'x-user-school-ids': 'school-002', 'x-user-view-all': '0' }
+      });
+      expect(outOfScope.status).toBe(200);
+      expect(await outOfScope.json()).toEqual({ found: false });
+    });
+  });
+
   it('returns the complete employee record for a selected person', async () => {
     const response = await fetch(`${baseUrl}/api/people/person-001/record`);
     expect(response.status).toBe(200);
@@ -108,6 +166,89 @@ describe('HR Reporting API foundation', () => {
     expect(docsResponse.status).toBe(200);
     expect(document.openapi).toBe('3.1.0');
     expect(document.paths['/people']).toBeDefined();
+  });
+});
+
+describe('Feature flags', () => {
+  let server: Server;
+  let baseUrl: string;
+  const admin = { 'x-user-roles': 'hr_admin', 'x-user-id': 'user-001' };
+
+  beforeEach(async () => {
+    server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  });
+
+  it('reports every known flag, including the nested auto-lookup flag', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
+    expect(response.status).toBe(200);
+    const flags = await response.json();
+    expect(Object.keys(flags).sort()).toEqual(['ai_assistant', 'employee_auto_lookup', 'future_positions', 'style_configuration']);
+  });
+
+  it('defaults style_configuration to off so the feature ships hidden', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
+    expect(await response.json()).toMatchObject({ style_configuration: false });
+  });
+
+  it('toggles style_configuration independently of the other flags', async () => {
+    const on = await fetch(`${baseUrl}/api/feature-flags/style_configuration`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    expect(on.status).toBe(200);
+    expect(await on.json()).toMatchObject({ key: 'style_configuration', enabled: true });
+
+    const flags = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+    expect(flags.style_configuration).toBe(true);
+    expect(flags.future_positions).toBe(false);
+  });
+
+  it('defaults employee_auto_lookup to off so the beta can ship without it', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
+    expect(await response.json()).toMatchObject({ employee_auto_lookup: false });
+  });
+
+  it('toggles employee_auto_lookup independently of future_positions', async () => {
+    const on = await fetch(`${baseUrl}/api/feature-flags/employee_auto_lookup`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    expect(on.status).toBe(200);
+    expect(await on.json()).toMatchObject({ key: 'employee_auto_lookup', enabled: true });
+
+    // The parent feature must be untouched by the child toggle.
+    const flags = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+    expect(flags.employee_auto_lookup).toBe(true);
+    expect(flags.future_positions).toBe(false);
+  });
+
+  it('rejects an unknown flag key', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags/not_a_flag`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'FEATURE_NOT_FOUND' });
+  });
+
+  it('refuses a flag change from a non-admin', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags/employee_auto_lookup`, {
+      method: 'PATCH',
+      headers: { 'x-user-roles': 'school_staff', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    expect(response.status).toBe(403);
   });
 });
 

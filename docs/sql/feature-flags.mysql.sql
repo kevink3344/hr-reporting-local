@@ -16,3 +16,6 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 
 INSERT IGNORE INTO feature_flags (feature_key, enabled) VALUES ('future_positions', 0);
 INSERT IGNORE INTO feature_flags (feature_key, enabled) VALUES ('ai_assistant', 0);
+-- Sub-feature of future_positions: employee auto-lookup. Ships OFF so enabling
+-- the Future Positions beta does not implicitly enable lookup.
+INSERT IGNORE INTO feature_flags (feature_key, enabled) VALUES ('employee_auto_lookup', 0);

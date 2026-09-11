@@ -1,4 +1,5 @@
 import type {
+  EmployeeLookup,
   FuturePosition,
   FuturePositionStatus,
   GenericReportRun,
@@ -26,6 +27,12 @@ import type {
 
 export interface PeopleRepository {
   list(): Promise<Person[]>;
+  /**
+   * Narrow single-row lookup used by the "stage a new incumbent" form's
+   * auto-fill. Returns null on a miss (the API surfaces that as
+   * `{ found: false }`, never a 404).
+   */
+  findByEmployeeNumber(employeeNumber: string): Promise<EmployeeLookup | null>;
 }
 
 export interface SchoolsRepository {
@@ -335,6 +342,58 @@ export interface FeatureFlagsRepository {
   set(key: string, enabled: boolean, updatedBy: string | null): Promise<FeatureFlag>;
 }
 
+// ---- Style themes (Style Configuration) ----
+// A named CSS style the admin can create and staff can apply. The built-in
+// "default" style is implicit (no row) and always available; every other row
+// is an admin-authored style. `mainFont` controls body/heading typography and
+// `monoFont` controls numbers/codes (employee numbers, account codes, etc.).
+export type StyleTheme = {
+  id: string;
+  name: string;
+  description: string | null;
+  /** Font stack for body + headings, e.g. "'Open Sans', sans-serif". */
+  mainFont: string;
+  /** Font stack for numbers/codes, e.g. "'DM Mono', monospace". */
+  monoFont: string;
+  /** Primary brand color (hex). */
+  primaryColor: string;
+  /** Accent color (hex). */
+  accentColor: string;
+  /** Page background color (hex). */
+  backgroundColor: string;
+  /** Body text color (hex). */
+  textColor: string;
+  /** Corner radius (px) for controls. */
+  radius: number;
+  /** When true, the decorative background gradient is removed (flat/clear background). */
+  noBackgroundImage: boolean;
+  isDefault: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StyleThemeInput = {
+  name: string;
+  description?: string | null;
+  mainFont: string;
+  monoFont: string;
+  primaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  textColor: string;
+  radius?: number;
+  noBackgroundImage?: boolean;
+};
+
+export interface StyleThemesRepository {
+  list(): Promise<StyleTheme[]>;
+  getById(id: string): Promise<StyleTheme | null>;
+  create(input: StyleThemeInput, createdBy: string | null): Promise<StyleTheme>;
+  update(id: string, input: Partial<StyleThemeInput>): Promise<StyleTheme | null>;
+  delete(id: string): Promise<boolean>;
+}
+
 // One persisted AI ask. `rows`/`columns` are the capped result set (JSON in
 // the DB) so a past ask can be replayed without re-calling the model.
 export type AiHistoryEntry = {
@@ -383,6 +442,7 @@ export type Repositories = {
   systemMessages: SystemMessagesRepository;
   futurePositions: FuturePositionsRepository;
   featureFlags: FeatureFlagsRepository;
+  styleThemes: StyleThemesRepository;
   aiHistory: AiHistoryRepository;
   users: UsersRepository;
 };

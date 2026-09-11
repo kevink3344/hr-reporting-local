@@ -26,6 +26,8 @@ import type {
   AiAnswer,
   AiHistoryItem,
   HealthStatus,
+  StyleTheme,
+  StyleThemeInput,
 } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -482,6 +484,36 @@ export function setFeatureFlag(session: LoginSession, key: string, enabled: bool
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...adminHeaders(session) },
     body: JSON.stringify({ enabled })
+  });
+}
+
+// ---- Style Configuration ----
+// Reads are available to any signed-in user (so staff can apply a style);
+// writes require an admin.
+export function getStyleThemes(session: LoginSession | null | undefined): Promise<StyleTheme[]> {
+  return request<StyleTheme[]>('/api/style-themes', { headers: viewHeaders(session) });
+}
+
+export function createStyleTheme(session: LoginSession, input: StyleThemeInput): Promise<StyleTheme> {
+  return request<StyleTheme>('/api/style-themes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...adminHeaders(session) },
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateStyleTheme(session: LoginSession, id: string, patch: Partial<StyleThemeInput>): Promise<StyleTheme> {
+  return request<StyleTheme>(`/api/style-themes/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...adminHeaders(session) },
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteStyleTheme(session: LoginSession, id: string): Promise<void> {
+  return request<void>(`/api/style-themes/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: adminHeaders(session)
   });
 }
 

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Athens High School - 318 · KPI Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1f2933;
+    --muted: #6b7a89;
+    --line: #e6e9ee;
+    --brand: #b3252a;           /* school accent */
+    --brand-soft: #fbecec;
+    --good: #1e8e4e;
+    --good-soft: #e6f5ec;
+    --warn: #b8860b;
+    --warn-soft: #fbf3df;
+    --bad: #c0392b;
+    --bad-soft: #fdecea;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 4px 12px rgba(16,24,40,.05);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    padding: 0 0 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  .eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .school-card {
+    background: linear-gradient(135deg, #b3252a 0%, #8f1d22 100%);
+    color: #fff;
+    border-radius: var(--radius);
+    padding: 28px 28px 24px;
+    margin-top: 28px;
+    box-shadow: var(--shadow);
+  }
+  .school-card .eyebrow { color: rgba(255,255,255,.75); }
+  .school-card h1 { font-size: 26px; font-weight: 800; margin-top: 6px; letter-spacing: -.01em; }
+  .school-card .sub { margin-top: 8px; font-size: 14px; color: rgba(255,255,255,.9); }
+  .school-card .meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; font-size: 13px; }
+  .school-card .meta div span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: rgba(255,255,255,.75); }
+  .school-card .meta div b { font-size: 16px; font-weight: 700; }
+
+  .section-title { margin: 30px 0 14px; font-size: 14px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: 8px; }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 18px; }
+  .kpi {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px 18px 16px;
+    box-shadow: var(--shadow);
+  }
+  .kpi .label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .kpi .value { font-size: 30px; font-weight: 800; letter-spacing: -.02em; margin-top: 4px; line-height: 1; }
+  .kpi .value small { font-size: 15px; font-weight: 600; color: var(--muted); }
+  .kpi .trend { margin-top: 10px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 20px; }
+  .trend.up { color: var(--good); background: var(--good-soft); }
+  .trend.down { color: var(--bad); background: var(--bad-soft); }
+  .trend.flat { color: var(--warn); background: var(--warn-soft); }
+
+  .row2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; margin-top: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+  .card h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .card .hint { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+
+  /* bar list */
+  .bar-row { margin-bottom: 12px; }
+  .bar-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .bar-top .name { color: var(--ink); font-weight: 600; }
+  .bar-top .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar-track { height: 9px; background: #eef1f5; border-radius: 20px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 20px; background: var(--brand); }
+  .bar-fill.alt { background: #4a6fb5; }
+
+  /* tenure stacked bar */
+  .stack { display: flex; height: 14px; border-radius: 20px; overflow: hidden; margin: 6px 0 14px; }
+  .seg { height: 100%; }
+  .legend { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 18px; font-size: 12px; }
+  .legend div { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+  .legend span.dot { width: 10px; height: 10px; border-radius: 3px; }
+  .legend b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* resignation months */
+  .mini-bars { display: flex; align-items: flex-end; gap: 12px; height: 120px; margin-top: 8px; }
+  .mini-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; }
+  .mini-col .bar { width: 100%; max-width: 64px; background: var(--brand); border-radius: 6px 6px 0 0; }
+  .mini-col .val { font-size: 13px; font-weight: 700; }
+  .mini-col .lbl { font-size: 12px; color: var(--muted); }
+
+  .foot { margin-top: 34px; font-size: 12px; color: var(--muted); text-align: center; }
+
+  @media (max-width: 780px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .row2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="school-card">
+      <div class="eyebrow">KPI Dashboard · Sample</div>
+      <h1>Athens High School - 318</h1>
+      <div class="sub">Headcount, staffing and vacancies at a glance.</div>
+      <div class="meta">
+        <div><span>As of</span><b>September 9, 2026</b></div>
+        <div><span>School level</span><b>High School</b></div>
+        <div><span>Authorized positions</span><b>275</b></div>
+        <div><span>Vacancy rate</span><b>26.2%</b></div>
+      </div>
+    </div>
+
+    <div class="section-title">Overview</div>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="label">Filled positions</div>
+        <div class="value">203<small> / 275</small></div>
+        <div class="trend up">▲ 73.8% filled</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Vacant positions</div>
+        <div class="value">72</div>
+        <div class="trend down">▲ 26.2% of total</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Teaching staff</div>
+        <div class="value">135</div>
+        <div class="trend flat">65% of staff</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Non-teaching staff</div>
+        <div class="value">71</div>
+        <div class="trend flat">35% of staff</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Team members (active)</div>
+        <div class="value">185</div>
+        <div class="trend flat">Distinct people</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Active assignments</div>
+        <div class="value">206</div>
+        <div class="trend flat">Some hold 2+</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Resignations (this term)</div>
+        <div class="value">27</div>
+        <div class="trend down">Jun–Aug</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Avg. years of service</div>
+        <div class="value">12.4</div>
+        <div class="trend up">▲ experienced</div>
+      </div>
+    </div>
+
+    <div class="row2">
+      <div class="card">
+        <h3>Staffing by position</h3>
+        <div class="hint">Top roles by number of people · 46 distinct roles total</div>
+        <div id="posbars"></div>
+      </div>
+
+      <div class="card">
+        <h3>Tenure profile</h3>
+        <div class="hint">Contract status across 206 assignments</div>
+        <div class="stack" id="tenureStack"></div>
+        <div class="legend" id="tenureLegend"></div>
+
+        <h3 style="margin-top:26px">Resignations by month</h3>
+        <div class="hint">Leave events this term</div>
+        <div class="mini-bars">
+          <div class="mini-col"><div class="val">20</div><div class="bar" style="height:100%"></div><div class="lbl">Jun</div></div>
+          <div class="mini-col"><div class="val">5</div><div class="bar" style="height:25%"></div><div class="lbl">Jul</div></div>
+          <div class="mini-col"><div class="val">2</div><div class="bar" style="height:10%"></div><div class="lbl">Aug</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">Sample dashboard rendered with real Athens High School - 318 data. Values are illustrative of the layout, not a finalized metrics definition.</div>
+  </div>
+
+<script>
+  const positionData = [
+    ["Teacher - Regular Classroom", 59],
+    ["Instructional Assistant - Special Programs", 20],
+    ["Teacher - Regular Classroom - PET", 19],
+    ["Teacher - CTE", 17],
+    ["Teacher - Special Programs", 14],
+    ["Teacher - Magnet", 7],
+    ["Counselor", 6],
+    ["Teacher - Recovery", 5],
+    ["Assistant Principal", 5],
+    ["Assistant Principal - Additional Employment", 5],
+  ];
+  const maxP = Math.max(...positionData.map((d) => d[1]));
+  const bars = document.getElementById('posbars');
+  positionData.forEach(([name, count], i) => {
+    const pct = (count / maxP) * 100;
+    bars.insertAdjacentHTML('beforeend',
+      `<div class="bar-row">
+         <div class="bar-top"><span class="name">${name}</span><span class="count">${count}</span></div>
+         <div class="bar-track"><div class="bar-fill ${i % 2 ? 'alt' : ''}" style="width:${pct}%"></div></div>
+       </div>`);
+  });
+
+  const tenure = [
+    ["Four-year contract", 74, "#b3252a"],
+    ["Two-year contract", 25, "#4a6fb5"],
+    ["One-year contract", 24, "#1e8e4e"],
+    ["Tenured employee", 22, "#7a3ea6"],
+    ["Other / temp", 61, "#c8ccd4"],
+  ];
+  const totalTenure = tenure.reduce((s, t) => s + t[1], 0);
+  const stack = document.getElementById('tenureStack');
+  const legend = document.getElementById('tenureLegend');
+  tenure.forEach(([name, val, color]) => {
+    stack.insertAdjacentHTML('beforeend', `<div class="seg" style="width:${(val/totalTenure)*100}%;background:${color}"></div>`);
+    legend.insertAdjacentHTML('beforeend', `<div><span class="dot" style="background:${color}"></span>${name} <b>${val}</b></div>`);
+  });
+</script>
+</body>
+</html>
