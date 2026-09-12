@@ -4,6 +4,7 @@ import { query } from '../db.js';
 import { REPORT_ROW_CAP, bindNamedParam, bindOrganization, validateReportSql, validateSubreportSql, newId, nowIso } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
 import { viewDefinitionSchema } from '../report-views.js';
+import { mysqlSchoolKpiRepository } from './mysql-kpi-repository.js';
 
 // Legacy open_pos_read.inc — the live MySQL variant. Uses CONCAT/IFNULL/NOW()
 // and casts the cross-type joins (pos_number, person_id) to make the link.
@@ -914,6 +915,9 @@ export const mysqlRepositories: Repositories = {
   },
   reports: { openPositions },
   positions: { getPositionDetails, search: searchPositions },
+  // The clickable KPI dashboard. Its SQL lives in its own module so the
+  // verified OPEN_POSITIONS_SQL above stays untouched.
+  schoolKpi: mysqlSchoolKpiRepository,
   // MySQL deferred: configurable report tables land here when the prod
   // MySQL now owns ALL config tables. Each repo reads/writes the live MySQL
   // reporting database directly, mirroring the Turso config implementation.

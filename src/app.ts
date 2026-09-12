@@ -23,6 +23,17 @@ import { openApiDocument } from './openapi.js';
 import { viewDefinitionSchema } from './report-views.js';
 import { reportHighlightRulesSchema } from './report-highlight.js';
 import { validateSubreportSql } from './reports-sql.js';
+import {
+  EXPIRY_WINDOW_DAYS,
+  KPI_BAR_LIMIT,
+  KPI_CATALOG_METRICS,
+  KPI_METRIC_KEYS,
+  KPI_STRIP_ORDER,
+  KPI_TILE_ORDER,
+  defaultFacetFor,
+  getKpiMetric,
+  isKpiMetricKey
+} from './kpi-definitions.js';
 import type { School, DirectoryResult } from './types.js';
 import { isAiConfigured } from './config.js';
 import { ask as aiAsk, listHistory as aiListHistory, getHistory as aiGetHistory, deleteHistory as aiDeleteHistory } from './ai/ai.js';
@@ -54,6 +65,39 @@ const loginSchema = z.object({
 
 const openPositionQuerySchema = z.object({
   organization: z.string().trim().min(1)
+});
+
+// ---- Clickable KPI dashboard ----
+//
+// The dashboard is always scoped to exactly one school: the client sends the
+// school id it already holds (the value `SchoolCombobox` uses everywhere else)
+// and the route resolves it to the `position_info.organization` string. That
+// keeps scoping id-based, so it uses the same `x-user-school-ids` comparison the
+// rest of the API does.
+const kpiFacetSchema = z.enum(['all', 'filled', 'vacant']);
+
+const schoolKpiQuerySchema = z.object({
+  schoolId: z.string().trim().min(1),
+  facet: kpiFacetSchema.optional().default('all')
+});
+
+const schoolKpiRowsQuerySchema = z.object({
+  schoolId: z.string().trim().min(1),
+  // Validated against the catalog by `getKpiMetric`, which throws
+  // UNKNOWN_KPI_METRIC — surfaced as a 400 rather than a 500.
+  metric: z.string().trim().min(1),
+  // Deliberately *not* defaulted to 'all': an omitted facet means "the facet
+  // this metric's tile stands for", so the shortest call (`?metric=vacant`)
+  // agrees with the Vacant tile. The UI widens by sending `facet=all`.
+  facet: kpiFacetSchema.optional(),
+  posName: z.string().trim().max(150).optional(),
+  q: z.string().trim().max(150).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25)
+});
+
+const schoolKpiDefinitionQuerySchema = z.object({
+  metric: z.string().trim().min(1)
 });
 
 const reportSectionSchema = z.object({
@@ -270,6 +314,12 @@ function stripSqlForReader<T extends { sqlQuery?: string; subreportQuery?: strin
 
 function repoErrorToStatus(error: unknown): { status: number; body: { error: string } } {
   const code = (error as { code?: string } | null)?.code ?? (error instanceof Error ? error.message : '');
+  // `getKpiMetric` throws `UNKNOWN_KPI_METRIC:<key>` for a metric the catalog
+  // does not define. That is a bad request (a typo'd query param), not a server
+  // fault, so it is reported as 400 while keeping the offending key visible.
+  if (code.startsWith('UNKNOWN_KPI_METRIC')) {
+    return { status: 400, body: { error: code } };
+  }
   switch (code) {
     case 'TITLE_REQUIRED':
     case 'TITLE_TOO_LONG':
@@ -688,6 +738,115 @@ export function createApp(
     } catch (error) {
       next(error);
     }
+  });
+
+  // ---- Clickable KPI dashboard ----
+  //
+  // Three read-only endpoints over ONE metric catalog (`src/kpi-definitions.ts`).
+  // Every number the dashboard shows — tile, breakdown bar, list header — is the
+  // length of the same predicate applied to the same position rows, so a tile
+  // and the list it opens cannot disagree.
+  //
+  // Scope handling is explicit rather than silent: a signed-in user restricted
+  // to certain schools gets 403 when asking for a school they cannot see, so the
+  // UI can explain itself instead of rendering an empty dashboard.
+
+  /**
+   * Resolve the requested school to the organization value stored on
+   * `position_info.organization` (`'<School Name> - <school_no>'`, identical to
+   * `schools.school_name`), and enforce the caller's school scope.
+   */
+  const resolveKpiSchool = async (
+    request: express.Request,
+    response: express.Response,
+    schoolId: string
+  ): Promise<string | null> => {
+    if (!orgIsVisible(request, schoolId)) {
+      response.status(403).json({ error: 'SCHOOL_NOT_PERMITTED' });
+      return null;
+    }
+    const schools = await repositories.schools.list();
+    const school = schools.find((candidate) => candidate.id === schoolId);
+    if (!school) {
+      response.status(404).json({ error: 'SCHOOL_NOT_FOUND' });
+      return null;
+    }
+    return school.name;
+  };
+
+  application.get('/api/schools/kpi', async (request, response, next) => {
+    try {
+      const query = schoolKpiQuerySchema.parse(request.query);
+      const organization = await resolveKpiSchool(request, response, query.schoolId);
+      if (organization === null) return;
+      response.json(await repositories.schoolKpi.getSchoolKpi(organization, query.facet));
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.get('/api/schools/kpi/rows', async (request, response, next) => {
+    try {
+      const query = schoolKpiRowsQuerySchema.parse(request.query);
+      // Narrow the free-form key to the catalog before it reaches the
+      // repository, so a typo is a clear 400 instead of a 500.
+      if (!isKpiMetricKey(query.metric)) {
+        response.status(400).json({ error: `UNKNOWN_KPI_METRIC:${query.metric}` });
+        return;
+      }
+      const organization = await resolveKpiSchool(request, response, query.schoolId);
+      if (organization === null) return;
+      response.json(
+        await repositories.schoolKpi.getSchoolKpiRows(organization, {
+          metric: query.metric,
+          facet: query.facet,
+          posName: query.posName,
+          q: query.q,
+          page: query.page,
+          pageSize: query.pageSize
+        })
+      );
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  // The definition endpoint is deliberately unauthenticated and school-agnostic:
+  // it returns the catalog entry (prose, filters, source tables, generated SQL)
+  // and touches no data, so the "ⓘ why does this number say that?" page works
+  // for any signed-in user regardless of which schools they can see.
+  application.get('/api/schools/kpi/definition', async (request, response, next) => {
+    try {
+      const query = schoolKpiDefinitionQuerySchema.parse(request.query);
+      const metric = getKpiMetric(query.metric);
+      // `defaultFacet` is what makes the definition page able to send the user
+      // to the *right* list for a metric that has no tile (active-staff): the
+      // dashboard has no payload entry to read it from.
+      response.json({ ...metric, defaultFacet: defaultFacetFor(metric) });
+    } catch (error) {
+      // `getKpiMetric` throws `UNKNOWN_KPI_METRIC:<key>` for a key the catalog
+      // does not define; map that to a 400 like the sibling routes do.
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  // The metric catalog as a whole, so a client can render the definition page's
+  // metric switcher without hard-coding the key list.
+  application.get('/api/schools/kpi/metrics', (_request, response) => {
+    response.json({
+      windowDays: EXPIRY_WINDOW_DAYS,
+      barLimit: KPI_BAR_LIMIT,
+      tileOrder: KPI_TILE_ORDER,
+      stripOrder: KPI_STRIP_ORDER,
+      keys: KPI_METRIC_KEYS,
+      metrics: KPI_CATALOG_METRICS
+    });
   });
 
   // Read-only Position Details — any authenticated staff can view a position by
@@ -1519,17 +1678,23 @@ export function createApp(
   // gate all optional features in one call.
   application.get('/api/feature-flags', async (_request, response, next) => {
     try {
-      const [futurePositions, autoLookup, aiAssistant, styleConfiguration] = await Promise.all([
+      const [futurePositions, autoLookup, aiAssistant, styleConfiguration, kpiDashboard] = await Promise.all([
         repositories.featureFlags.get('future_positions'),
         repositories.featureFlags.get('employee_auto_lookup'),
         repositories.featureFlags.get('ai_assistant'),
-        repositories.featureFlags.get('style_configuration')
+        repositories.featureFlags.get('style_configuration'),
+        repositories.featureFlags.get('kpi_dashboard')
       ]);
       response.json({
         future_positions: futurePositions?.enabled ?? false,
         employee_auto_lookup: autoLookup?.enabled ?? false,
         ai_assistant: aiAssistant?.enabled ?? false,
-        style_configuration: styleConfiguration?.enabled ?? false
+        style_configuration: styleConfiguration?.enabled ?? false,
+        // Opt-OUT, unlike every other flag here. The KPI Dashboard is already
+        // live, so a missing row (or a database where the flag was never
+        // seeded) must leave it visible: an absent flag must never take a
+        // shipped page away from staff. Only an explicit `false` hides it.
+        kpi_dashboard: kpiDashboard?.enabled ?? true
       });
     } catch (error) {
       const mapped = repoErrorToStatus(error);
@@ -1541,7 +1706,7 @@ export function createApp(
   application.patch('/api/feature-flags/:key', requireAdmin, async (request, response, next) => {
     try {
       const key = routeId(request.params.key);
-      if (key !== 'future_positions' && key !== 'employee_auto_lookup' && key !== 'ai_assistant' && key !== 'style_configuration') {
+      if (key !== 'future_positions' && key !== 'employee_auto_lookup' && key !== 'ai_assistant' && key !== 'style_configuration' && key !== 'kpi_dashboard') {
         response.status(404).json({ error: 'FEATURE_NOT_FOUND' });
         return;
       }

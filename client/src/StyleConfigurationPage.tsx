@@ -269,7 +269,10 @@ export function StyleConfigurationPage({ session }: { session: LoginSession }) {
           <h2 id="style-title">Style configuration.</h2>
           <p className="reports-intro">Choose the look of the workspace. The default style is the original; add new styles based on a site or brand. Staff pick the main font and the number/code font separately.</p>
         </div>
-        <div className="report-count"><Palette size={16} /><strong>{styles.length}</strong><span>styles</span></div>
+        <div className="report-count">
+          <span className="report-count-head"><Palette size={16} /><strong>{styles.length}</strong></span>
+          <span>styles</span>
+        </div>
       </div>
 
       {notice && <div className="notice success"><CheckCircle2 size={18} /><span>{notice}</span></div>}

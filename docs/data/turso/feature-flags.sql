@@ -23,3 +23,7 @@ INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('ai_assis
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('employee_auto_lookup', 0, datetime('now'));
 -- Style Configuration: admin-authored CSS styles staff can apply. Ships OFF.
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('style_configuration', 0, datetime('now'));
+-- KPI Dashboard: the one OPT-OUT flag. It ships ON because the dashboard is
+-- already live; GET /api/feature-flags also reports 1 when this row is absent,
+-- so an unseeded database never hides the page. Set to 0 to hide the nav link.
+INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('kpi_dashboard', 1, datetime('now'));

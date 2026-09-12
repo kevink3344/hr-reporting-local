@@ -499,12 +499,32 @@ export type FeatureFlag = {
 // GET /api/feature-flags now returns a map of every known flag.
 // employee_auto_lookup is a sub-feature of future_positions: the Future
 // Positions beta can be on while employee auto-lookup stays off.
+// kpi_dashboard is the one opt-out flag: the server reports `true` when the row
+// is missing, so an unseeded flag cannot hide the already-live dashboard.
 export type FeatureFlagsResponse = {
   future_positions: boolean;
   ai_assistant: boolean;
   employee_auto_lookup: boolean;
   style_configuration: boolean;
+  kpi_dashboard: boolean;
 };
+
+// The flag keys PATCH /api/feature-flags/:key accepts. Both admin pages use this
+// to hand a successful toggle straight to the app shell, so the flag list lives
+// here rather than being restated in each page.
+export const FEATURE_FLAG_KEYS = [
+  'future_positions',
+  'employee_auto_lookup',
+  'ai_assistant',
+  'style_configuration',
+  'kpi_dashboard'
+] as const;
+
+export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
+
+export function isFeatureFlagKey(key: string): key is FeatureFlagKey {
+  return (FEATURE_FLAG_KEYS as readonly string[]).includes(key);
+}
 
 // ---- Style Configuration ----
 // A named CSS style staff can apply. The built-in "default" style is implicit
@@ -575,4 +595,159 @@ export type HealthStatus = {
   dataSource: string;
   dbReady: boolean;
   aiConfigured: boolean;
+};
+
+// ---- Clickable KPI dashboard ----
+// Mirrors the server contract in src/types.ts. The catalog (labels, definitions,
+// SQL) is NOT duplicated here on purpose — it is fetched from
+// GET /api/schools/kpi/definition so the docs and the numbers can never drift.
+
+export type KpiMetricKey =
+  | 'filled'
+  | 'vacant'
+  | 'authorized'
+  | 'active-staff'
+  | 'expiring-certs'
+  | 'expiring-contracts'
+  | 'vacancy-rate';
+
+export type KpiUnit = 'positions' | 'people';
+
+/** Seat-status view, orthogonal to which metric is being listed. */
+export type KpiFacet = 'all' | 'filled' | 'vacant';
+
+export type KpiFilterDoc = {
+  column: string;
+  test: string;
+};
+
+export type KpiMetricValue = {
+  key: KpiMetricKey;
+  label: string;
+  unit: KpiUnit;
+  value: number;
+  /** Pre-formatted for display: `'233'` or `'26.2%'`. */
+  displayValue: string;
+  definition: string;
+  note: string;
+  drilldown: KpiMetricKey | null;
+  drillable: boolean;
+  /**
+   * The facet the drill-down should open with. Server-supplied so the client
+   * never has to guess that "Vacant" implies `facet=vacant`.
+   */
+  defaultFacet: KpiFacet;
+};
+
+export type KpiPositionRow = {
+  posNumber: string;
+  posName: string;
+  organization: string;
+  accountNumber: string;
+  monthsAvailable: number | null;
+  monthsUsed: number | null;
+  occupied: boolean;
+  fullName: string;
+  employeeNumber: string;
+  personId: string;
+  classroom: string;
+  mailstop: string;
+  tenureCode: string;
+  contractId: string;
+  contractEnd: string;
+  certNextExpiration: string;
+  posStart: string;
+  posEnding: string;
+  tap: string;
+  degree: string;
+};
+
+export type KpiMetricDefinition = {
+  key: KpiMetricKey;
+  label: string;
+  unit: KpiUnit;
+  aggregate: 'count' | 'share';
+  shareOf?: KpiMetricKey;
+  definition: string;
+  note: string;
+  filters: KpiFilterDoc[];
+  sourceTables: string[];
+  sql: { count: string; rows: string };
+  drilldown: KpiMetricKey | null;
+  /** The facet this metric's list opens with. */
+  defaultFacet?: KpiFacet;
+};
+
+export type KpiBar = {
+  label: string;
+  posName: string;
+  value: number;
+};
+
+export type KpiBreakdown = {
+  axis: 'pos_name';
+  title: string;
+  bars: KpiBar[];
+  titleCount: number;
+  truncated: boolean;
+  limit: number;
+};
+
+export type SchoolKpiPayload = {
+  school: string;
+  asOf: string;
+  windowDays: number;
+  facet: KpiFacet;
+  /** 4 tiles, in display order. */
+  tiles: KpiMetricValue[];
+  /** Authorized + vacancy rate. */
+  strip: KpiMetricValue[];
+  breakdown: KpiBreakdown;
+};
+
+export type SchoolKpiRows = {
+  metric: KpiMetricKey;
+  label: string;
+  unit: KpiUnit;
+  facet: KpiFacet;
+  posName: string;
+  query: string;
+  /** The tile's number: rows matching the metric, ignoring facet/search/title. */
+  metricValue: number;
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  /** Seat-status counts for the unfiltered metric set; `all = filled + vacant`. */
+  facetCounts: Record<KpiFacet, number>;
+  /** The agreement footer: the concrete predicate this list was built from. */
+  predicateSummary: string;
+  posNames: string[];
+  rows: KpiPositionRow[];
+};
+
+export type KpiCatalog = {
+  windowDays: number;
+  barLimit: number;
+  tileOrder: KpiMetricKey[];
+  stripOrder: KpiMetricKey[];
+  keys: KpiMetricKey[];
+  /** Presentation slice of the catalog, so a switcher can label every metric. */
+  metrics: Array<{
+    key: KpiMetricKey;
+    label: string;
+    defaultFacet: KpiFacet;
+    unit: KpiUnit;
+    drillable: boolean;
+  }>;
+};
+
+/** What the dashboard hands to the drill-down when something is clicked. */
+export type KpiTarget = {
+  metric: KpiMetricKey;
+  facet: KpiFacet;
+  posName: string;
+  q: string;
+  schoolId: string;
+  schoolName: string;
 };

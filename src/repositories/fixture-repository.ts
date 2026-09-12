@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type {
   FuturePosition,
   GenericReportRun,
+  KpiPositionRow,
   OpenPositionRow,
   Person,
   PersonRecord,
@@ -29,6 +30,7 @@ import type {
   PositionSearchFilter,
   PositionSearchHit,
   Repositories,
+  SchoolKpiRepository,
   ReportDefinitionInput,
   ReportDefinitionUpdate,
   ReportListFilter,
@@ -51,6 +53,7 @@ import type {
 import { REPORT_ROW_CAP, bindOrganization, newId, nowIso, validateReportSql, validateSubreportSql } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
 import { viewDefinitionSchema } from '../report-views.js';
+import { buildSchoolKpiPayload, buildSchoolKpiRows } from '../kpi-definitions.js';
 
 const dataDirectory = resolve(process.cwd(), 'docs', 'data');
 
@@ -62,40 +65,184 @@ async function readFixture<T>(fileName: string): Promise<T[]> {
 // Synthetic Open Position rows matching the live schema shape, used for
 // offline/demo parity. Scoped by organization name (position_info.organization
 // === schools.school_name). Vacant positions have empty employee fields.
-const fixtureOpenPositions: OpenPositionRow[] = [
+//
+// The seats are authored ONCE as `fixtureKpiRows` (below) and projected into
+// the `OpenPositionRow` shape, so the Open Positions report and the KPI
+// dashboard can never disagree about which seats exist. `OpenPositionRow` has
+// no field for the certificate / contract windows the KPI needs, so those live
+// only on `KpiPositionRow`.
+function isoDaysFromToday(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+// Deliberately deterministic relative to "today": the expiry windows below must
+// stay inside (or outside) the 180-day window no matter when the fixture runs,
+// or the expiring tiles would drift over time.
+const FIXTURE_OPEN_SEAT = isoDaysFromToday(-30);
+const FIXTURE_SEAT_ENDING = isoDaysFromToday(300);
+
+type FixtureKpiSeed = {
+  posNumber: string;
+  posName: string;
+  organization: string;
+  accountNumber: string;
+  monthsAvailable: number;
+  monthsUsed: number;
+  fullName?: string;
+  employeeNumber?: string;
+  personId?: string;
+  classroom?: string;
+  mailstop?: string;
+  tenureCode?: string;
+  contractId?: string;
+  /** Days from today; <= 180 makes the seat count as an expiring contract. */
+  contractEndsInDays?: number;
+  /** Days from today; <= 180 makes the person count as an expiring cert. */
+  certExpiresInDays?: number;
+  degree?: string;
+};
+
+const fixtureKpiSeeds: FixtureKpiSeed[] = [
+  // --- Test Oak Elementary: 8 authorized · 4 filled · 4 vacant ---
   {
-    posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1001', posName: 'Teacher',
-    organization: 'Test Oak Elementary', accountNumber: '01-5410-005-114-0109',
-    monthsAvailable: 10, monthsUsed: 8,
-    fullName: 'Example, Alex', employeeNumber: '900001', classroom: 'Room 111', mailstop: 'MS-11',
-    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: 'MEd', nbptsExpire: '2030-06-30'
+    posNumber: '1001', posName: 'Teacher', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0109', monthsAvailable: 10, monthsUsed: 8,
+    fullName: 'Example, Alex', employeeNumber: '900001', personId: '900001',
+    classroom: 'Room 111', mailstop: 'MS-11', tenureCode: 'N Code', contractId: 'Regular',
+    contractEndsInDays: 45, certExpiresInDays: 30, degree: 'MEd'
   },
   {
-    posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1002', posName: 'Assistant Principal',
-    organization: 'Test Oak Elementary', accountNumber: '01-5410-005-114-0121',
-    monthsAvailable: 11, monthsUsed: 0,
-    fullName: '', employeeNumber: '', classroom: '', mailstop: '',
-    tenureCode: '', contractId: '', contractEnd: '', tap: '', degree: '', nbptsExpire: ''
+    posNumber: '1002', posName: 'Assistant Principal', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0121', monthsAvailable: 11, monthsUsed: 0
   },
   {
-    posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1003', posName: 'Principal',
-    organization: 'Test Oak Elementary', accountNumber: '01-5410-005-114-0122',
-    monthsAvailable: 12, monthsUsed: 12,
-    fullName: 'Sample, Jordan', employeeNumber: '900002', classroom: 'Room 112', mailstop: 'MS-12',
-    tenureCode: 'N Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: 'EdD', nbptsExpire: ''
+    posNumber: '1003', posName: 'Principal', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0122', monthsAvailable: 12, monthsUsed: 12,
+    fullName: 'Sample, Jordan', employeeNumber: '900002', personId: '900002',
+    classroom: 'Room 112', mailstop: 'MS-12', tenureCode: 'N Code', contractId: 'Regular',
+    // Both windows are outside the 180-day horizon on purpose.
+    contractEndsInDays: 500, certExpiresInDays: 400, degree: 'EdD'
   },
   {
-    posStart: '2025-07-01', posEnding: '2026-06-30', posNumber: '1004', posName: 'Teacher',
-    organization: 'Test River High', accountNumber: '01-5410-005-114-0135',
-    monthsAvailable: 10, monthsUsed: 10,
-    fullName: 'Smith, Riley', employeeNumber: '900006', classroom: 'Room 116', mailstop: 'MS-16',
-    tenureCode: 'T Code', contractId: 'Regular', contractEnd: '2027-06-30', tap: '100', degree: '', nbptsExpire: ''
+    posNumber: '1005', posName: 'Teacher', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0131', monthsAvailable: 10, monthsUsed: 0
+  },
+  {
+    posNumber: '1006', posName: 'Teacher', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0132', monthsAvailable: 10, monthsUsed: 9,
+    fullName: 'Whitfield, Dana', employeeNumber: '900003', personId: '900003',
+    classroom: 'Room 114', mailstop: 'MS-14', tenureCode: 'T Code', contractId: 'Regular',
+    certExpiresInDays: 120
+  },
+  {
+    posNumber: '1007', posName: 'Counselor', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0141', monthsAvailable: 11, monthsUsed: 0
+  },
+  {
+    posNumber: '1008', posName: 'Counselor', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0142', monthsAvailable: 11, monthsUsed: 11,
+    fullName: 'Bell, Morgan', employeeNumber: '900004', personId: '900004',
+    classroom: 'Office 2', mailstop: 'MS-02', tenureCode: 'N Code', contractId: 'Regular',
+    contractEndsInDays: 100
+  },
+  {
+    posNumber: '1009', posName: 'Media Specialist', organization: 'Test Oak Elementary',
+    accountNumber: '01-5410-005-114-0151', monthsAvailable: 10, monthsUsed: 0
+  },
+
+  // --- Test River High: 2 authorized · 1 filled · 1 vacant ---
+  {
+    posNumber: '1004', posName: 'Teacher', organization: 'Test River High',
+    accountNumber: '01-5410-005-114-0135', monthsAvailable: 10, monthsUsed: 10,
+    fullName: 'Smith, Riley', employeeNumber: '900006', personId: '900006',
+    classroom: 'Room 116', mailstop: 'MS-16', tenureCode: 'T Code', contractId: 'Regular'
+  },
+  {
+    posNumber: '1010', posName: 'Assistant Principal', organization: 'Test River High',
+    accountNumber: '01-5410-005-114-0145', monthsAvailable: 11, monthsUsed: 0
   }
 ];
+
+/**
+ * The fixture's `KpiPositionRow[]` — the exact shape the MySQL repository
+ * normalizes its query into, so both backends run the same metric maths.
+ */
+const fixtureKpiRows: KpiPositionRow[] = fixtureKpiSeeds.map((seed) => {
+  const occupied = Boolean(seed.fullName || seed.employeeNumber);
+  return {
+    posNumber: seed.posNumber,
+    posName: seed.posName,
+    organization: seed.organization,
+    accountNumber: seed.accountNumber,
+    monthsAvailable: seed.monthsAvailable,
+    monthsUsed: seed.monthsUsed,
+    occupied,
+    fullName: seed.fullName ?? '',
+    employeeNumber: seed.employeeNumber ?? '',
+    personId: seed.personId ?? '',
+    classroom: seed.classroom ?? '',
+    mailstop: seed.mailstop ?? '',
+    tenureCode: seed.tenureCode ?? '',
+    contractId: seed.contractId ?? '',
+    contractEnd: seed.contractEndsInDays === undefined ? '' : isoDaysFromToday(seed.contractEndsInDays),
+    certNextExpiration:
+      seed.certExpiresInDays === undefined ? '' : isoDaysFromToday(seed.certExpiresInDays),
+    posStart: FIXTURE_OPEN_SEAT,
+    posEnding: FIXTURE_SEAT_ENDING,
+    tap: occupied ? '100' : '',
+    degree: seed.degree ?? ''
+  };
+});
+
+/** Project the KPI rows back into the report-facing Open Position shape. */
+function toOpenPositionRow(row: KpiPositionRow): OpenPositionRow {
+  return {
+    posStart: row.posStart,
+    posEnding: row.posEnding,
+    posNumber: row.posNumber,
+    posName: row.posName,
+    organization: row.organization,
+    accountNumber: row.accountNumber,
+    monthsAvailable: row.monthsAvailable,
+    monthsUsed: row.monthsUsed,
+    fullName: row.fullName,
+    employeeNumber: row.employeeNumber,
+    classroom: row.classroom,
+    mailstop: row.mailstop,
+    tenureCode: row.tenureCode,
+    contractId: row.contractId,
+    contractEnd: row.contractEnd,
+    tap: row.tap,
+    degree: row.degree,
+    nbptsExpire: ''
+  };
+}
+
+const fixtureOpenPositions: OpenPositionRow[] = fixtureKpiRows.map(toOpenPositionRow);
 
 async function openPositions(organization: string): Promise<OpenPositionRow[]> {
   return fixtureOpenPositions.filter((row) => row.organization === organization);
 }
+
+/**
+ * Offline/demo parity for the clickable KPI dashboard. It runs the *same*
+ * pure functions as the MySQL implementation, over the fixture rows, so the
+ * dashboard behaves identically with `DATA_SOURCE=fixture`.
+ */
+const fixtureSchoolKpiRepository: SchoolKpiRepository = {
+  async getSchoolKpi(organization, facet = 'all') {
+    const rows = fixtureKpiRows.filter((row) => row.organization === organization);
+    return buildSchoolKpiPayload(rows, organization, facet, new Date());
+  },
+  async getSchoolKpiRows(organization, request) {
+    const rows = fixtureKpiRows.filter((row) => row.organization === organization);
+    return buildSchoolKpiRows(rows, organization, request, new Date());
+  }
+};
 
 // Build a PositionDetails payload from a synthetic open-position row. The
 // fixture only carries a subset of position_info columns, so the remaining
@@ -346,6 +493,7 @@ export const fixtureRepositories: Repositories = {
     }
   },
   reports: { openPositions },
+  schoolKpi: fixtureSchoolKpiRepository,
   positions: { getPositionDetails, search: searchPositions },
   reportSections: {
     async list(includeInactive = false) {
@@ -1171,6 +1319,9 @@ function buildFixtureFuturePositions(): Repositories['futurePositions'] {
 // ---- Feature flags (admin-gated toggles) ----
 const fixtureFeatureFlags = new Map<string, { key: string; enabled: boolean; updatedBy: string | null; updatedAt: string | null }>();
 fixtureFeatureFlags.set('future_positions', { key: 'future_positions', enabled: false, updatedBy: null, updatedAt: null });
+// The KPI Dashboard is already live, so it seeds ON: this is the one opt-out
+// flag, matching the server's `?? true` default in GET /api/feature-flags.
+fixtureFeatureFlags.set('kpi_dashboard', { key: 'kpi_dashboard', enabled: true, updatedBy: null, updatedAt: null });
 
 function buildFixtureFeatureFlags(): Repositories['featureFlags'] {
   return {

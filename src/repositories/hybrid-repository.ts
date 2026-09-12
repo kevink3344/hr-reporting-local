@@ -36,6 +36,7 @@ export const hybridRepositories: Repositories = {
   personRecords: mysqlRepositories.personRecords,
   reports: mysqlRepositories.reports,
   positions: mysqlRepositories.positions,
+  schoolKpi: mysqlRepositories.schoolKpi,
 
   // ---- CONFIG: Turso ----
   reportSections: tursoRepositories.reportSections,

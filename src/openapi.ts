@@ -12,7 +12,13 @@ export const openApiDocument = {
     { name: 'People', description: 'Employee and person lookups' },
     { name: 'Schools', description: 'School and department lookups' },
     { name: 'Positions', description: 'Position lookups and notes' },
-    { name: 'Reports', description: 'Report generation and scoping' }
+    { name: 'Reports', description: 'Report generation and scoping' },
+    {
+      name: 'KPI',
+      description:
+        'Clickable KPI dashboard. Every number is the length of one shared predicate from the metric ' +
+        'catalog, so a tile, a breakdown bar and the list it opens can never disagree.'
+    }
   ],
   paths: {
     '/auth/login': {
@@ -182,6 +188,142 @@ export const openApiDocument = {
           },
           '400': { description: 'Missing organization parameter' },
           '404': { description: 'Position not found' }
+        }
+      }
+    },
+    '/schools/kpi': {
+      get: {
+        tags: ['KPI'],
+        operationId: 'getSchoolKpi',
+        summary: 'Dashboard payload for one school',
+        description:
+          'Returns the four tiles, the authorized/vacancy-rate strip and the Position Title breakdown for a ' +
+          'single school. `schoolId` is the school id the rest of the API uses (the `SchoolCombobox` value); ' +
+          'the server resolves it to the `position_info.organization` string. A caller restricted to other ' +
+          'schools receives 403 rather than a silently empty dashboard.',
+        parameters: [
+          { name: 'schoolId', in: 'query', required: true, schema: { type: 'string' } },
+          {
+            name: 'facet',
+            in: 'query',
+            required: false,
+            description: 'Seat-status view used for the breakdown. Defaults to `all`.',
+            schema: { $ref: '#/components/schemas/KpiFacet' }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'Tiles, strip and breakdown for the school',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/SchoolKpiPayload' } } }
+          },
+          '400': { description: 'Missing or invalid query parameter' },
+          '403': { description: 'Caller is not permitted to see this school', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '404': { description: 'Unknown school id', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/schools/kpi/rows': {
+      get: {
+        tags: ['KPI'],
+        operationId: 'getSchoolKpiRows',
+        summary: 'Drill-down list behind a KPI tile, bar or facet chip',
+        description:
+          'The generic list page for every metric. `metricValue` is the tile\u2019s number and is computed before ' +
+          'the facet, title filter, search and pagination are applied, so the list and the tile always agree. ' +
+          '`total` is the count after every filter and is what the pager is built from. For a `share` metric such ' +
+          'as `vacancy-rate`, `metricValue` is the numerator (the vacancies), not the percentage.',
+        parameters: [
+          { name: 'schoolId', in: 'query', required: true, schema: { type: 'string' } },
+          {
+            name: 'metric',
+            in: 'query',
+            required: true,
+            description: 'Metric catalog key. An unknown key returns 400 `UNKNOWN_KPI_METRIC:<key>`.',
+            schema: { $ref: '#/components/schemas/KpiMetricKey' }
+          },
+          {
+            name: 'facet',
+            in: 'query',
+            required: false,
+            description:
+              'Seat-status view, orthogonal to the metric. Omitted means \u201Cthe facet this metric\u2019s tile ' +
+              'stands for\u201D (`KpiMetricValue.defaultFacet`, echoed back on the response), so the shortest ' +
+              'call `?metric=vacant` already agrees with the Vacant tile. Send `all` to widen to every open seat ' +
+              'without leaving the metric.',
+            schema: { $ref: '#/components/schemas/KpiFacet' }
+          },
+          {
+            name: 'posName',
+            in: 'query',
+            required: false,
+            description: 'Restrict to one Position Title (the value carried by a breakdown bar).',
+            schema: { type: 'string' }
+          },
+          {
+            name: 'q',
+            in: 'query',
+            required: false,
+            description: 'Case-insensitive search across Position Title, position number, name and employee number.',
+            schema: { type: 'string' }
+          },
+          { name: 'page', in: 'query', required: false, schema: { type: 'integer', minimum: 1, default: 1 } },
+          {
+            name: 'pageSize',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 200, default: 25 }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'One page of rows plus the counts the page renders',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/SchoolKpiRows' } } }
+          },
+          '400': { description: 'Invalid query parameter or unknown metric', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '403': { description: 'Caller is not permitted to see this school', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '404': { description: 'Unknown school id', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/schools/kpi/definition': {
+      get: {
+        tags: ['KPI'],
+        operationId: 'getKpiDefinition',
+        summary: 'Definition, filters and read-only SQL for one metric',
+        description:
+          'Backs the \u201csee the definition and read-only SQL\u201d page. Reads the metric catalog only and touches ' +
+          'no school data, so it answers for any signed-in user regardless of which schools they can see.',
+        parameters: [
+          {
+            name: 'metric',
+            in: 'query',
+            required: true,
+            description: 'Metric catalog key. An unknown key returns 400 `UNKNOWN_KPI_METRIC:<key>`.',
+            schema: { $ref: '#/components/schemas/KpiMetricKey' }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'The metric definition, including generated count and row SQL',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/KpiMetricDefinition' } } }
+          },
+          '400': { description: 'Unknown metric', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        }
+      }
+    },
+    '/schools/kpi/metrics': {
+      get: {
+        tags: ['KPI'],
+        operationId: 'listKpiMetrics',
+        summary: 'Metric catalog metadata',
+        description:
+          'The catalogue\u2019s shape \u2014 tile order, strip order, every key, the expiry window and the bar limit \u2014 so a ' +
+          'client can render the dashboard and the definition switcher without hard-coding the key list.',
+        responses: {
+          '200': {
+            description: 'Catalog metadata',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/KpiCatalog' } } }
+          }
         }
       }
     },
@@ -703,6 +845,242 @@ export const openApiDocument = {
           name: { type: 'string' },
           type: { type: 'string', enum: ['school', 'department'] },
           active: { type: 'boolean' }
+        }
+      },
+      // ---- Clickable KPI dashboard ----
+      KpiMetricKey: {
+        type: 'string',
+        description: 'Every metric in the catalog. Adding one here changes both the dashboard and its definition page.',
+        enum: ['authorized', 'filled', 'vacant', 'vacancy-rate', 'active-staff', 'expiring-certs', 'expiring-contracts']
+      },
+      KpiUnit: {
+        type: 'string',
+        description: 'The grain of the metric. `positions` counts seats; `people` collapses to one row per person.',
+        enum: ['positions', 'people']
+      },
+      KpiFacet: {
+        type: 'string',
+        description:
+          'Seat-status view. Orthogonal to the metric: applied to any metric, `all` means every open seat, so ' +
+          'switching `Vacant` → `All` widens the list. `all` is always `filled` + `vacant`.',
+        enum: ['all', 'filled', 'vacant']
+      },
+      KpiFilterDoc: {
+        type: 'object',
+        required: ['column', 'test'],
+        description: 'One row of the definition page’s filter table.',
+        properties: {
+          column: { type: 'string', example: 'e.full_name / e.emp_number' },
+          test: { type: 'string', example: "both blank → this seat counts as vacant" }
+        }
+      },
+      KpiPredicate: {
+        type: 'object',
+        required: ['base', 'incumbent'],
+        description:
+          'The machine-readable definition of a metric. Every tile, bar and list row is produced by evaluating ' +
+          'this one predicate, which is why the numbers cannot drift apart.',
+        properties: {
+          base: { type: 'string', enum: ['open_positions', 'active_assignments'] },
+          incumbent: { type: 'string', enum: ['any', 'present', 'absent'] },
+          posName: { type: 'string', description: 'Restrict to one Position Title.' },
+          certExpiresWithinDays: { type: 'integer', description: 'Certificate expires within this many days.' },
+          contractEndsWithinDays: { type: 'integer', description: 'Contract ends within this many days.' }
+        }
+      },
+      KpiMetricValue: {
+        type: 'object',
+        required: ['key', 'label', 'unit', 'value', 'displayValue', 'definition', 'note', 'drilldown', 'drillable', 'defaultFacet'],
+        description: 'A metric with its value for one school — one tile or one strip entry.',
+        properties: {
+          key: { $ref: '#/components/schemas/KpiMetricKey' },
+          label: { type: 'string', example: 'Vacant' },
+          unit: { $ref: '#/components/schemas/KpiUnit' },
+          value: { type: 'number', example: 25 },
+          displayValue: { type: 'string', description: 'Pre-formatted, e.g. `25` or `26.2%`.', example: '25' },
+          definition: { type: 'string', description: 'One sentence: what this number means.' },
+          note: { type: 'string', description: 'What inflates or deflates the number.' },
+          drilldown: {
+            allOf: [{ $ref: '#/components/schemas/KpiMetricKey' }],
+            nullable: true,
+            description: 'The metric whose list this tile opens, or null when not clickable.'
+          },
+          drillable: { type: 'boolean' },
+          defaultFacet: {
+            allOf: [{ $ref: '#/components/schemas/KpiFacet' }],
+            description: 'The facet the drill-down opens with, derived from the metric.'
+          }
+        }
+      },
+      KpiBar: {
+        type: 'object',
+        required: ['label', 'posName', 'value'],
+        description: 'One bar: a Position Title and how many records carry it. Clicking filters the list to `posName`.',
+        properties: {
+          label: { type: 'string', example: 'Teacher - Regular Classroom' },
+          posName: { type: 'string', description: 'The exact title value sent back as `posName`.' },
+          value: { type: 'integer', example: 62 }
+        }
+      },
+      KpiBreakdown: {
+        type: 'object',
+        required: ['axis', 'title', 'bars', 'titleCount', 'truncated', 'limit'],
+        properties: {
+          axis: { type: 'string', enum: ['pos_name'], description: 'Grouped by Position Title, never by account code.' },
+          title: { type: 'string', example: 'Vacancies by Position Title' },
+          bars: { type: 'array', items: { $ref: '#/components/schemas/KpiBar' } },
+          titleCount: { type: 'integer', description: 'Distinct titles before the top-N cut.' },
+          truncated: { type: 'boolean' },
+          limit: { type: 'integer', example: 10 }
+        }
+      },
+      KpiPositionRow: {
+        type: 'object',
+        required: ['posNumber', 'posName', 'organization', 'accountNumber', 'occupied'],
+        properties: {
+          posNumber: { type: 'string', example: '3180459' },
+          posName: { type: 'string', example: 'Teacher - Regular Classroom' },
+          organization: { type: 'string', example: 'Athens High School - 318' },
+          accountNumber: { type: 'string' },
+          monthsAvailable: { type: 'number', nullable: true },
+          monthsUsed: { type: 'number', nullable: true },
+          occupied: { type: 'boolean', description: 'The single Filled/Vacant boolean the whole dashboard shares.' },
+          fullName: { type: 'string' },
+          employeeNumber: { type: 'string' },
+          personId: { type: 'string' },
+          classroom: { type: 'string' },
+          mailstop: { type: 'string' },
+          tenureCode: { type: 'string' },
+          contractId: { type: 'string' },
+          contractEnd: { type: 'string' },
+          certNextExpiration: { type: 'string', description: 'Earliest future certificate expiry, or blank.' },
+          posStart: { type: 'string' },
+          posEnding: { type: 'string' },
+          tap: { type: 'string' },
+          degree: { type: 'string' }
+        }
+      },
+      SchoolKpiPayload: {
+        type: 'object',
+        required: ['school', 'asOf', 'windowDays', 'facet', 'tiles', 'strip', 'breakdown'],
+        properties: {
+          school: { type: 'string', example: 'Athens High School - 318' },
+          asOf: { type: 'string', example: '2026-09-11' },
+          windowDays: { type: 'integer', example: 180, description: 'The expiry window the two expiry tiles use.' },
+          facet: { allOf: [{ $ref: '#/components/schemas/KpiFacet' }], description: 'Echoed so the control stays in sync.' },
+          tiles: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/KpiMetricValue' },
+            description: 'Four tiles in display order: Filled, Vacant, Expiring Certs, Expiring Contracts.'
+          },
+          strip: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/KpiMetricValue' },
+            description: 'Authorized and vacancy rate.'
+          },
+          breakdown: { $ref: '#/components/schemas/KpiBreakdown' }
+        }
+      },
+      SchoolKpiRows: {
+        type: 'object',
+        required: ['metric', 'label', 'unit', 'facet', 'posName', 'query', 'metricValue', 'total', 'page', 'pageSize', 'pageCount', 'facetCounts', 'predicateSummary', 'posNames', 'rows'],
+        properties: {
+          metric: { $ref: '#/components/schemas/KpiMetricKey' },
+          label: { type: 'string' },
+          unit: { $ref: '#/components/schemas/KpiUnit' },
+          facet: { $ref: '#/components/schemas/KpiFacet' },
+          posName: { type: 'string', description: 'Blank when no title filter is active.' },
+          query: { type: 'string', description: 'The resolved organization the rows came from.' },
+          metricValue: {
+            type: 'integer',
+            description:
+              'The tile’s number: rows matching the metric, computed before facet, title filter, search and ' +
+              'pagination, so the list and the tile always agree. For a share metric this is the numerator. ' +
+              'With no `facet` (or with `facet` equal to the metric’s `defaultFacet`) `total` equals this value, ' +
+              'which is the tile→list parity the dashboard is built on.'
+          },
+          total: { type: 'integer', description: 'Rows after every filter — what the pager is built from.' },
+          page: { type: 'integer' },
+          pageSize: { type: 'integer' },
+          pageCount: { type: 'integer', minimum: 1 },
+          facetCounts: {
+            type: 'object',
+            required: ['all', 'filled', 'vacant'],
+            description: 'Counts for the seat-status chips, independent of the metric. `all` is always `filled` + `vacant`.',
+            properties: {
+              all: { type: 'integer' },
+              filled: { type: 'integer' },
+              vacant: { type: 'integer' }
+            }
+          },
+          predicateSummary: {
+            type: 'string',
+            description: 'The agreement footer, e.g. `open positions · incumbent = absent`.',
+            example: 'open positions · incumbent = absent'
+          },
+          posNames: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Distinct Position Titles in the metric set, so the title filter cannot empty itself.'
+          },
+          rows: { type: 'array', items: { $ref: '#/components/schemas/KpiPositionRow' } }
+        }
+      },
+      KpiMetricDefinition: {
+        type: 'object',
+        required: ['key', 'label', 'unit', 'aggregate', 'predicate', 'definition', 'note', 'filters', 'sourceTables', 'sql', 'drilldown'],
+        description: 'The full public definition of a metric — what the “definition and read-only SQL” page renders.',
+        properties: {
+          key: { $ref: '#/components/schemas/KpiMetricKey' },
+          label: { type: 'string' },
+          unit: { $ref: '#/components/schemas/KpiUnit' },
+          aggregate: { type: 'string', enum: ['count', 'share'] },
+          shareOf: { allOf: [{ $ref: '#/components/schemas/KpiMetricKey' }], description: 'The denominator, for a share metric.' },
+          predicate: { $ref: '#/components/schemas/KpiPredicate' },
+          definition: { type: 'string' },
+          note: { type: 'string' },
+          filters: { type: 'array', items: { $ref: '#/components/schemas/KpiFilterDoc' }, minItems: 1 },
+          sourceTables: { type: 'array', items: { type: 'string' } },
+          sql: {
+            type: 'object',
+            required: ['count', 'rows'],
+            description: 'Read-only, generated from the predicate so the prose and the SQL cannot disagree.',
+            properties: {
+              count: { type: 'string' },
+              rows: { type: 'string' }
+            }
+          },
+          drilldown: {
+            allOf: [{ $ref: '#/components/schemas/KpiMetricKey' }],
+            nullable: true,
+            description: 'Where the tile sends you. Null when not clickable.'
+          }
+        }
+      },
+      KpiCatalog: {
+        type: 'object',
+        required: ['windowDays', 'barLimit', 'tileOrder', 'stripOrder', 'keys', 'metrics'],
+        properties: {
+          windowDays: { type: 'integer', example: 180 },
+          barLimit: { type: 'integer', example: 10 },
+          tileOrder: { type: 'array', items: { $ref: '#/components/schemas/KpiMetricKey' } },
+          stripOrder: { type: 'array', items: { $ref: '#/components/schemas/KpiMetricKey' } },
+          keys: { type: 'array', items: { $ref: '#/components/schemas/KpiMetricKey' } },
+          metrics: {
+            type: 'array',
+            description: 'Presentation slice of the catalog: a display label and default facet for every metric.',
+            items: {
+              type: 'object',
+              required: ['key', 'label', 'defaultFacet', 'unit', 'drillable'],
+              properties: {
+                key: { $ref: '#/components/schemas/KpiMetricKey' },
+                label: { type: 'string', example: 'Vacancy rate' },
+                defaultFacet: { $ref: '#/components/schemas/KpiFacet' },
+                unit: { type: 'string', example: 'positions' },
+                drillable: { type: 'boolean', description: 'False for metrics documented here but not shown on the dashboard.' }
+              }
+            }
+          }
         }
       },
       OpenPositionRow: {

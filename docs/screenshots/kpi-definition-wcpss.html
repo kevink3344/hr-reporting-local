@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en" data-style="wcpss" data-bg-image="none">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How “Vacant” is calculated · Broughton High School</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* Tokens mirror WCPSS_STYLE (client/src/styleThemes.ts) — same as kpi-dashboard-wcpss.html */
+  :root {
+    --style-primary: #165788;
+    --style-accent: #df6d1c;
+    --style-bg: #ffffff;
+    --style-text: #525252;
+    --style-radius: 4px;
+    --style-radius-sm: 2px;
+
+    --font-main: 'Open Sans', 'Segoe UI', sans-serif;
+    --font-mono: 'Roboto Mono', 'Courier New', monospace;
+
+    --navy: #165788;
+    --navy-dark: #10405f;
+    --orange: #df6d1c;
+    --ink: #525252;
+    --ink-strong: #23303a;
+    --muted: #7b8794;
+    --line: #dde3ea;
+    --line-soft: #eef1f5;
+    --surface: #fafbfc;
+    --focus: #165788;
+    --vacant-bg: #fdf1e7;
+    --vacant-fg: #a8500f;
+    --filled-bg: #eaf3f9;
+    --filled-fg: #124a72;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-main);
+    background: var(--style-bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: 64px;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  .topbar { height: 6px; background: var(--orange); }
+  .site-header { border-bottom: 1px solid var(--line); background: #fff; }
+  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 16px; padding-bottom: 16px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    font-weight: 700; font-size: 15px; letter-spacing: .06em;
+    color: #fff; background: var(--navy); padding: 8px 10px; border-radius: var(--style-radius);
+  }
+  .brand-name { font-size: 16px; font-weight: 700; color: var(--ink-strong); }
+  .brand-sub { font-size: 12px; color: var(--muted); }
+  .header-note { font-size: 11px; color: var(--muted); text-align: right; max-width: 240px; line-height: 1.4; }
+  .header-note b { color: var(--ink); }
+
+  /* ---------- breadcrumb ---------- */
+  .crumbs { display: flex; align-items: center; gap: 8px; padding: 18px 0 0; font-size: 12.5px; flex-wrap: wrap; }
+  .crumbs a { color: var(--navy); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+  .crumbs a:hover { text-decoration: underline; }
+  .crumbs a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+  .crumbs .sep { color: var(--muted); }
+  .crumbs .here { color: var(--muted); }
+
+  /* ---------- page title ---------- */
+  .page-head { padding: 14px 0 18px; border-bottom: 1px solid var(--line-soft); }
+  .page-head h1 { font-size: 24px; font-weight: 700; color: var(--ink-strong); letter-spacing: -.01em; }
+  .page-head .sub { font-size: 13px; color: var(--muted); margin-top: 5px; }
+
+  .metabar { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 14px; }
+  .metabar div { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .metabar b {
+    display: block; font-family: var(--font-mono); font-weight: 500; font-size: 13px;
+    text-transform: none; letter-spacing: 0; color: var(--ink-strong);
+    font-variant-numeric: tabular-nums; margin-top: 2px;
+  }
+
+  /* ---------- metric switcher ---------- */
+  .switcher { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 16px 0 0; }
+  .switcher-label { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+  .switcher a {
+    font-size: 12.5px; font-weight: 600; color: var(--navy); text-decoration: none;
+    border: 1px solid var(--line); background: #fff; border-radius: var(--style-radius); padding: 6px 12px;
+  }
+  .switcher a:hover { border-color: var(--navy); background: #f2f7fb; }
+  .switcher a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .switcher a[aria-current="page"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+
+  /* ---------- cards ---------- */
+  .card { border: 1px solid var(--line); border-radius: var(--style-radius); background: #fff; margin-top: 18px; }
+  .card > h2 {
+    font-size: 11.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--navy);
+    padding: 12px 16px; border-bottom: 1px solid var(--line-soft); background: var(--surface);
+    border-radius: var(--style-radius) var(--style-radius) 0 0;
+  }
+  .card .body { padding: 16px; }
+  .card .body > p { margin-bottom: 12px; }
+  .card .body > p:last-child { margin-bottom: 0; }
+
+  .lead { font-size: 15px; color: var(--ink-strong); line-height: 1.6; }
+
+  dl.def { display: grid; grid-template-columns: 190px 1fr; gap: 11px 20px; font-size: 13px; }
+  dl.def dt { color: var(--muted); font-weight: 600; }
+  dl.def dd { color: var(--ink-strong); line-height: 1.55; }
+
+  code {
+    font-family: var(--font-mono); font-size: 12px; background: #f3f6f9;
+    border: 1px solid var(--line-soft); border-radius: var(--style-radius-sm);
+    padding: 1px 5px; color: var(--navy-dark);
+  }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.data th {
+    text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: #fff; background: var(--navy); padding: 9px 12px; white-space: nowrap;
+  }
+  table.data td { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; line-height: 1.55; }
+  table.data tr:last-child td { border-bottom: 0; }
+  table.data td.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.data td.code { font-family: var(--font-mono); font-size: 12px; color: var(--navy-dark); white-space: nowrap; }
+
+  .tick { font-weight: 700; white-space: nowrap; }
+  .tick.yes { color: #1c7a4a; }
+  .tick.no { color: #a8500f; }
+
+  pre.sql {
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.7;
+    background: #0f2b3d; color: #dbe9f2; border-radius: var(--style-radius);
+    padding: 15px 16px; overflow-x: auto; tab-size: 2; margin-top: 12px;
+  }
+  pre.sql + pre.sql { margin-top: 14px; }
+  pre.sql .c { color: #7fa8c0; font-style: italic; }
+  pre.sql .k { color: #8fd3a0; font-weight: 500; }
+  pre.sql .p { color: #f0b37e; font-weight: 500; }
+  .sql-head { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-top: 16px; }
+  .sql-head:first-of-type { margin-top: 0; }
+  .sql-note { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin-top: 12px; }
+
+  .caveat, .agree {
+    display: flex; gap: 11px; border-radius: var(--style-radius);
+    padding: 14px 16px; margin-top: 18px; font-size: 12.8px; line-height: 1.6;
+  }
+  .caveat { border: 1px solid #f2d3b8; background: var(--vacant-bg); color: #7a3d0c; }
+  .caveat b { color: #5f2f09; }
+  .caveat code { background: #fff; border-color: #f2d3b8; color: #8a4410; }
+  .caveat a { color: #8a4410; font-weight: 700; }
+  .caveat ul { padding-left: 17px; margin-top: 7px; }
+  .caveat li { margin-bottom: 5px; }
+
+  .agree { border: 1px solid #cfe2f0; background: var(--filled-bg); color: #124a72; display: block; }
+  .agree b { color: #0d3853; }
+  .agree code { background: #fff; border-color: #cfe2f0; color: #124a72; }
+  .agree a { color: #0d3853; font-weight: 700; }
+
+  .footnote { font-size: 11.5px; color: var(--muted); line-height: 1.65; margin-top: 22px; }
+  .footnote code { font-size: 11px; }
+
+  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  @media (max-width: 720px) {
+    dl.def { grid-template-columns: 1fr; gap: 2px 0; }
+    dl.def dt { margin-top: 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="topbar"></div>
+<header class="site-header">
+  <div class="wrap">
+    <div class="brand">
+      <span class="brand-mark">WCPSS</span>
+      <div>
+        <div class="brand-name">Wake County Public Schools</div>
+        <div class="brand-sub">Human Resources · KPI Dashboard</div>
+      </div>
+    </div>
+    <div class="header-note">Mock-up. Illustrative figures for review &mdash; not live data.</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="kpi-drilldown-wcpss.html" id="backLink">&larr; Back to the list</a>
+    <span class="sep">/</span>
+    <span>Broughton High School</span>
+    <span class="sep">/</span>
+    <span class="here" id="crumbHere">How &ldquo;Vacant&rdquo; is calculated</span>
+  </nav>
+
+  <header class="page-head">
+    <h1 id="h1">How &ldquo;Vacant&rdquo; is calculated</h1>
+    <div class="sub" id="sub">&nbsp;</div>
+    <div class="metabar" id="metabar"></div>
+  </header>
+
+  <nav class="switcher" aria-label="Choose a metric">
+    <span class="switcher-label">Metric</span>
+    <span id="chips"></span>
+  </nav>
+
+  <section class="card">
+    <h2>Definition</h2>
+    <div class="body">
+      <p class="lead" id="defLead"></p>
+      <dl class="def" id="defList"></dl>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>What counts, and what does not</h2>
+    <div class="body">
+      <table class="data">
+        <caption class="visually-hidden">Inclusion and exclusion rules for this metric</caption>
+        <thead>
+          <tr><th scope="col" style="width:86px">Counts?</th><th scope="col">Rule</th><th scope="col">Why</th></tr>
+        </thead>
+        <tbody id="rules"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Source tables &amp; columns</h2>
+    <div class="body">
+      <table class="data">
+        <caption class="visually-hidden">Tables and columns used by this metric</caption>
+        <thead>
+          <tr><th scope="col" style="width:210px">Table</th><th scope="col">Columns</th><th scope="col" style="width:34%">Role</th></tr>
+        </thead>
+        <tbody id="tables"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Filters applied</h2>
+    <div class="body">
+      <table class="data">
+        <caption class="visually-hidden">Filters applied to this metric</caption>
+        <thead>
+          <tr><th scope="col" style="width:44%">Predicate</th><th scope="col">In plain English</th></tr>
+        </thead>
+        <tbody id="filters"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Read-only SQL</h2>
+    <div class="body">
+      <p style="font-size:12.5px;color:#7b8794">
+        The <b>count</b> query produces the number on the tile. The <b>rows</b> query produces the list.
+        Both are built from the same predicate &mdash; only <code>COUNT(*)</code> versus <code>SELECT …</code> differs.
+      </p>
+      <div id="sqlHost"></div>
+      <p class="sql-note">
+        Static, author-scoped, school-parameterised. Gated by <code>validateReadOnlySql(sql, 'organization', …)</code> in
+        <code>src/reports-sql.ts</code>; the list is capped at <code>REPORT_ROW_CAP</code>. No salary columns are selected.
+      </p>
+    </div>
+  </section>
+
+  <section class="card" id="catCard">
+    <h2>Object code &rarr; category label</h2>
+    <div class="body">
+      <p style="font-size:12.5px;color:#7b8794;margin-bottom:12px">
+        The &ldquo;By category&rdquo; axis groups on <code>position_info.object</code>. These are the display labels.
+        <i>Code values shown are illustrative placeholders pending the DBA&#8217;s object-code list; the mapping shape is what is settled.</i>
+      </p>
+      <table class="data">
+        <thead><tr><th scope="col">Object code</th><th scope="col">Display label</th><th scope="col" style="width:110px">Vacant now</th></tr></thead>
+        <tbody id="catmap"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="caveat" id="caveats"></div>
+
+  <div class="agree">
+    <b>Why this list and the tile always agree.</b> The tile count and the drill-down list are generated from a single
+    shared predicate, so the row count of the list can never drift from the number on the dashboard. This page is the
+    third view of that same predicate &mdash; it is the definition, not a second implementation.
+    <a href="kpi-drilldown-wcpss.html">Go to the list &rarr;</a>
+  </div>
+
+  <p class="footnote">
+    <b>About this mock.</b> This page replaces the earlier explain <i>drawer</i> &mdash; the definition, source tables,
+    columns, and read-only SQL now have a real page, so each metric&#8217;s explanation is linkable, printable, and easy to
+    cite in a data question. In the app this is <code>KpiDefinitionPage.tsx</code> routed as <code>?metric=…</code>,
+    reusing <code>OPEN_POSITIONS_SQL</code> from <code>src/repositories/mysql-repository.ts</code> for the position metrics.
+  </p>
+</main>
+
+<script>
+  const SCHOOL = 'Broughton High School';
+  const WINDOW_DAYS = 180; // ← confirmed
+
+  /* The three rules that open a position. Shared verbatim by Filled / Vacant / Authorized. */
+  const OPEN_RULES = [
+    { sql: "pi.pos_ending &gt; NOW() OR IFNULL(pi.pos_ending,'0000-00-00') LIKE '0000-00-00%'",
+      plain: 'The seat has not ended. A blank or zero date means “no end date set”, which counts as open.' },
+    { sql: "pi.pos_number NOT LIKE '888%'",
+      plain: 'Excludes administrative / placeholder seat numbers that are not real budgeted positions.' },
+    { sql: "pi.organization = ?",
+      plain: 'School scope. A school-scoped user is pinned to their own school; anyone else asking for another gets 403.' }
+  ];
+
+  const ABSENT = { sql: "IFNULL(e.full_name,'') = '' AND IFNULL(e.emp_number,'') = ''",
+                   plain: 'Incumbent is absent — both the name and the employee number are blank. This is the Vacant test.' };
+  const PRESENT = { sql: "IFNULL(e.full_name,'') &lt;&gt; '' OR IFNULL(e.emp_number,'') &lt;&gt; ''",
+                    plain: 'Incumbent is present — a name or employee number exists. This is the Filled test.' };
+
+  const POS_COUNT = (inc) => `-- Tile count — the number on the dashboard
+SELECT COUNT(*) AS value
+FROM position_info pi
+LEFT JOIN employee_info e
+       ON IFNULL(CAST(e.pos_number AS UNSIGNED),0)
+        = IFNULL(CAST(pi.pos_number AS UNSIGNED),0)
+WHERE (pi.pos_ending > NOW()
+       OR IFNULL(pi.pos_ending,'0000-00-00') LIKE '0000-00-00%')
+  AND pi.pos_number NOT LIKE '888%'
+  AND pi.organization = ?          -- school scope${inc}`;
+
+  const POS_ROWS = (inc) => `-- Drill-down list — identical predicate, one row per position
+SELECT DISTINCT
+       pi.pos_start, pi.pos_ending, pi.pos_number, pi.pos_name,
+       pi.organization, pi.object, pi.months,
+       CONCAT(IFNULL(pi.fund,''),'-',IFNULL(pi.purpose,''),'-',
+              IFNULL(pi.program,''),'-',IFNULL(pi.object,''),'-',
+              IFNULL(pi.level,''),'-',IFNULL(pi.cost_center,'')) AS account_number,
+       IFNULL(e.full_name,'')   AS full_name,
+       IFNULL(e.emp_number,'')  AS emp_number,
+       IFNULL(e.tenure_code,'') AS tenure_code
+FROM position_info pi
+LEFT JOIN employee_info e
+       ON IFNULL(CAST(e.pos_number AS UNSIGNED),0)
+        = IFNULL(CAST(pi.pos_number AS UNSIGNED),0)
+WHERE (pi.pos_ending > NOW()
+       OR IFNULL(pi.pos_ending,'0000-00-00') LIKE '0000-00-00%')
+  AND pi.pos_number NOT LIKE '888%'
+  AND pi.organization = ?          -- school scope${inc}
+ORDER BY pi.object, pi.pos_name
+LIMIT ? OFFSET ?;                  -- capped at REPORT_ROW_CAP`;
+
+  const POS_TABLES = [
+    { table: '<code>position_info</code> <span class="brand-sub">as <code>pi</code></span>',
+      cols: '<code>pos_number</code>, <code>pos_name</code>, <code>object</code>, <code>organization</code>, <code>pos_ending</code>, <code>months</code>, <code>fund</code>, <code>purpose</code>, <code>program</code>, <code>level</code>, <code>cost_center</code>',
+      role: 'The seat. <b>One row per budgeted position</b> — this is the grain. Also the source of the account string.' },
+    { table: '<code>employee_info</code> <span class="brand-sub">as <code>e</code>, LEFT JOIN</span>',
+      cols: '<code>full_name</code>, <code>emp_number</code>, <code>pos_number</code>, <code>tenure_code</code>, <code>contract_end</code>',
+      role: 'The incumbent. A <b>LEFT</b> JOIN is essential — an inner join would silently hide every vacancy. Joined on <code>CAST(… AS UNSIGNED)</code> because <code>pos_number</code> is varchar here and INT in <code>position_info</code>.' },
+    { table: '<code>cert_info</code> <span class="brand-sub">LEFT JOIN</span>',
+      cols: '<code>person_id</code>, <code>cert_expiration</code>, <code>nbpts_expire</code>',
+      role: 'Certificate data. Present in the shared query but only <i>read</i> by the certificate metrics.' }
+  ];
+
+  const CERT_COUNT = `-- Tile count — distinct people whose certificate expires inside the window
+SELECT COUNT(DISTINCT c.person_id) AS value
+FROM cert_info c
+JOIN employee_info e
+      ON IFNULL(CAST(e.person_id AS UNSIGNED),0)
+       = IFNULL(CAST(c.person_id AS UNSIGNED),0)
+WHERE e.organization = ?                        -- school scope
+  AND c.cert_expiration >= NOW()
+  AND c.cert_expiration <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY);`;
+
+  const CERT_ROWS = `-- Drill-down list — identical predicate, one row per person-certificate
+SELECT DISTINCT
+       c.person_id, e.full_name, e.emp_number, e.pos_name,
+       c.cert_expiration, c.cert_type,
+       DATEDIFF(c.cert_expiration, NOW()) AS days_left
+FROM cert_info c
+JOIN employee_info e
+      ON IFNULL(CAST(e.person_id AS UNSIGNED),0)
+       = IFNULL(CAST(c.person_id AS UNSIGNED),0)
+WHERE e.organization = ?                        -- school scope
+  AND c.cert_expiration >= NOW()
+  AND c.cert_expiration <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY)
+ORDER BY c.cert_expiration
+LIMIT ? OFFSET ?;                              -- capped at REPORT_ROW_CAP`;
+
+  const CONTRACT_COUNT = `-- Tile count — distinct people whose contract ends inside the window
+SELECT COUNT(DISTINCT e.person_id) AS value
+FROM employee_info e
+WHERE e.organization = ?                        -- school scope
+  AND e.contract_end >= NOW()
+  AND e.contract_end <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY);`;
+
+  const CONTRACT_ROWS = `-- Drill-down list — identical predicate, one row per person
+SELECT DISTINCT
+       e.person_id, e.full_name, e.emp_number, e.pos_name,
+       e.contract_id, e.contract_end,
+       DATEDIFF(e.contract_end, NOW()) AS days_left
+FROM employee_info e
+WHERE e.organization = ?                        -- school scope
+  AND e.contract_end >= NOW()
+  AND e.contract_end <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY)
+ORDER BY e.contract_end
+LIMIT ? OFFSET ?;                              -- capped at REPORT_ROW_CAP`;
+
+  const PEOPLE_TABLES = (metric) => [
+    { table: '<code>employee_info</code> <span class="brand-sub">as <code>e</code></span>',
+      cols: '<code>person_id</code>, <code>full_name</code>, <code>emp_number</code>, <code>pos_name</code>, <code>organization</code>, <code>contract_id</code>, <code>contract_end</code>',
+      role: 'The person and their contract. Scoped by <code>organization</code>.' },
+    metric === 'expiring-certs'
+      ? { table: '<code>cert_info</code> <span class="brand-sub">as <code>c</code></span>',
+          cols: '<code>person_id</code>, <code>cert_expiration</code>, <code>cert_type</code>',
+          role: 'The certificate. Joined to the person on <code>person_id</code>.' }
+      : { table: '<span class="brand-sub">— none —</span>', cols: '—', role: 'Contracts live entirely on <code>employee_info</code>.' }
+  ];
+
+  const WINDOW_RULE = {
+    sql: `expiry &gt;= NOW() AND expiry &lt; DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY)`,
+    plain: `Already expired rows are excluded (they need a different conversation), and the horizon is ${WINDOW_DAYS} days. ${WINDOW_DAYS} is a single constant in kpi-definitions.ts.`
+  };
+
+  const peopleCaveat = (what) => `<div>
+    <b>Caveats that change this number.</b>
+    <ul>
+      <li><b>Window, not “soon”.</b> “Expiring” means inside ${WINDOW_DAYS} days exactly. Already-expired rows are excluded.</li>
+      <li><b>Distinct people, not certificates.</b> A person with three expiring certificates counts once, so the tile uses <code>COUNT(DISTINCT person_id)</code>. The list may therefore show more rows than the tile for a different metric definition — see the parity test.</li>
+      <li><b>Which date is authoritative.</b> ${what}. Confirm this against <code>nbpts_expire</code>, which sits on the same rows.</li>
+      <li><b>Blank end dates.</b> A <code>NULL</code> expiry cannot be inside any window and is excluded, so “no date recorded” never appears as “expiring”.</li>
+    </ul>
+  </div>`;
+
+  const CATMAP = [
+    { code: '1xx', label: 'Teachers',        vacant: 14 },
+    { code: '2xx', label: 'Consultants',     vacant:  3 },
+    { code: '3xx', label: 'Vice Principals', vacant:  2 },
+    { code: '4xx', label: 'Assistants',      vacant:  1 },
+    { code: '5xx', label: 'Custodians',      vacant:  1 }
+  ];
+
+  const METRICS = {
+    filled: {
+      label: 'Filled', title: 'Filled positions', unit: 'positions', drilldown: 'positions',
+      lead: 'Filled counts <b>authorized positions that currently have an incumbent</b> — a budgeted seat with someone in it.',
+      def: [
+        ['Grain', 'One row per budgeted position (a seat), not per person.'],
+        ['Answer', '<code>incumbent = present</code> — a <code>full_name</code> or <code>emp_number</code> exists.'],
+        ['Relationship', 'Authorized = Filled + Vacant, by construction.'],
+        ['Composes with', 'The <code>All | Filled | Vacant</code> facet, the category axis, and the search box.']
+      ],
+      rules: [
+        ['yes', 'Open seats with an incumbent', 'The seat is open and a name or employee number is present.'],
+        ['yes', 'Seats with more than one incumbent', 'Counted <b>once</b> — the grain is the seat. <code>DISTINCT</code> prevents double-counting.'],
+        ['no', "Student-level '888%' seats", 'Administrative placeholders, not budgeted positions.'],
+        ['no', 'Ended seats', '<code>pos_ending</code> in the past.'],
+        ['no', 'Other schools', 'Scoped by <code>pi.organization</code>.']
+      ],
+      tables: POS_TABLES,
+      filters: [...OPEN_RULES, PRESENT],
+      countSql: POS_COUNT(`\n  AND (${PRESENT.sql});`),
+      rowsSql: POS_ROWS(`\n  AND (${PRESENT.sql})`),
+      caveat: `<div>
+        <b>Caveats that change this number.</b>
+        <ul>
+          <li><b>Seat, not headcount.</b> A position staffed by two people is <b>one</b> filled seat. Headcount is a different metric.</li>
+          <li><b>Blank incumbents are invisible to an inner join.</b> The LEFT JOIN is what makes Vacant exist at all.</li>
+          <li><b>Placeholder seats are excluded</b> (<code>pos_number NOT LIKE '888%'</code>), which lowers Filled as well as Authorized.</li>
+        </ul>
+      </div>`,
+      showCats: true
+    },
+
+    vacant: {
+      label: 'Vacant', title: 'Vacant positions', unit: 'positions', drilldown: 'positions',
+      lead: 'Vacant counts <b>authorized positions that currently have no incumbent</b> — a real, budgeted seat that is unfilled today.',
+      def: [
+        ['Grain', 'One row per budgeted position (a seat), not per person.'],
+        ['Answer', '<code>incumbent = absent</code> — both <code>full_name</code> and <code>emp_number</code> are blank.'],
+        ['Denominator', 'Authorized (141). Vacancy rate = Vacant ÷ Authorized = 14.9%.'],
+        ['Composes with', 'The <code>All | Filled | Vacant</code> facet, the category axis, and the search box.']
+      ],
+      rules: [
+        ['yes', 'Open seats with no incumbent', 'The seat is open and both the name and employee number are blank.'],
+        ['no', 'Seats with any incumbent', 'A blank name <i>and</i> employee number are both required. One or the other is “filled”.'],
+        ['no', "Student-level '888%' seats", 'Administrative placeholders, not budgeted positions.'],
+        ['no', 'Ended seats', '<code>pos_ending</code> in the past — the seat no longer exists.'],
+        ['no', 'Other schools', 'Scoped by <code>pi.organization</code>.']
+      ],
+      tables: POS_TABLES,
+      filters: [...OPEN_RULES, ABSENT],
+      countSql: POS_COUNT(`\n  AND ${ABSENT.sql};`),
+      rowsSql: POS_ROWS(`\n  AND ${ABSENT.sql}`),
+      caveat: `<div>
+        <b>Caveats that change this number.</b>
+        <ul>
+          <li><b>Not the same as “authorized − filled”.</b> That subtraction assumes every seat is either cleanly filled or cleanly empty. Testing the incumbent directly is what makes the tile and the list agree exactly.</li>
+          <li><b>Placeholder seats are excluded</b> (<code>pos_number NOT LIKE '888%'</code>). Without this rule the count rises, so it is shown rather than hidden.</li>
+          <li><b>A seat that has ended is not vacant</b> — it is gone. <code>pos_ending</code> is therefore part of the predicate.</li>
+          <li><b>Two people, one seat.</b> A seat shared by two incumbents is filled, not vacant, and does not appear here.</li>
+        </ul>
+      </div>`,
+      showCats: true
+    },
+
+    authorized: {
+      label: 'Authorized', title: 'Authorized positions', unit: 'positions', drilldown: 'positions',
+      lead: 'Authorized counts <b>every open budgeted position</b> in the school, regardless of whether it is filled. It is the denominator of the vacancy rate.',
+      def: [
+        ['Grain', 'One row per budgeted position (a seat).'],
+        ['Answer', '<code>incumbent = any</code> — no incumbent test at all.'],
+        ['Identity', 'Authorized = Filled (120) + Vacant (21) = 141.'],
+        ['Composes with', 'The facet. Selecting <code>All</code> on the dashboard is this metric.']
+      ],
+      rules: [
+        ['yes', 'Every open seat', 'Filled and vacant alike, with or without an incumbent.'],
+        ['no', "Student-level '888%' seats", 'Administrative placeholders, not budgeted positions.'],
+        ['no', 'Ended seats', '<code>pos_ending</code> in the past.'],
+        ['no', 'Other schools', 'Scoped by <code>pi.organization</code>.'],
+        ['no', 'Future positions', 'Not yet authorized. See the separate Future Positions view.']
+      ],
+      tables: POS_TABLES,
+      filters: [...OPEN_RULES, { sql: 'no incumbent test', plain: 'This metric deliberately omits the Filled/Vacant test — it is the union of both.' }],
+      countSql: POS_COUNT(';'),
+      rowsSql: POS_ROWS(''),
+      caveat: `<div>
+        <b>Caveats that change this number.</b>
+        <ul>
+          <li><b>It is a snapshot of open seats, not a budget.</b> A seat authorized but ending this month still counts until <code>pos_ending</code> passes.</li>
+          <li><b>Vacancy rate depends on this being right.</b> Every vacancy-rate percentage is this number in the denominator.</li>
+          <li><b>Placeholder seats are excluded</b> (<code>pos_number NOT LIKE '888%'</code>).</li>
+        </ul>
+      </div>`,
+      showCats: true
+    },
+
+    'expiring-certs': {
+      label: 'Expiring Certs', title: 'Expiring certifications', unit: 'people', drilldown: 'people',
+      lead: `Expiring Certs counts <b>distinct people on staff whose certificate expires within ${WINDOW_DAYS} days</b>.`,
+      def: [
+        ['Grain', 'One row per person (<code>COUNT(DISTINCT person_id)</code>).'],
+        ['Answer', `<code>cert_expiration</code> inside the next ${WINDOW_DAYS} days.`],
+        ['Window', `${WINDOW_DAYS} days, already confirmed. A single constant in <code>kpi-definitions.ts</code>.`],
+        ['Drill-down', 'people — name, position, certificate, expiry, days left.']
+      ],
+      rules: [
+        ['yes', `Certificates expiring in 0–${WINDOW_DAYS} days`, 'Inclusive of today, exclusive of the horizon.'],
+        ['yes', 'Faculty and staff currently on assignment', 'Counted once per person, however many certificates they hold.'],
+        ['no', 'Already-expired certificates', 'A lapsed certificate is a compliance question, not a planning one.'],
+        ['no', `Anything beyond ${WINDOW_DAYS} days`, 'Outside the window.'],
+        ['no', 'Blank expiry dates', 'An unrecorded date cannot be “expiring”, so it never inflates this number.'],
+        ['no', 'Other schools', 'Scoped by <code>e.organization</code>.']
+      ],
+      tables: PEOPLE_TABLES('expiring-certs'),
+      filters: [
+        { sql: 'e.organization = ?', plain: 'School scope.' },
+        WINDOW_RULE,
+        { sql: 'COUNT(DISTINCT c.person_id)', plain: 'One person with three certificates counts once. The list shows one row per certificate, so it can be longer than the tile — that is why the tile is defined as people.' }
+      ],
+      countSql: CERT_COUNT,
+      rowsSql: CERT_ROWS,
+      caveat: peopleCaveat('<code>cert_expiration</code> is treated as authoritative'),
+      showCats: false
+    },
+
+    'expiring-contracts': {
+      label: 'Expiring Contracts', title: 'Expiring contracts', unit: 'people', drilldown: 'people',
+      lead: `Expiring Contracts counts <b>distinct people on staff whose contract ends within ${WINDOW_DAYS} days</b>.`,
+      def: [
+        ['Grain', 'One row per person (<code>COUNT(DISTINCT person_id)</code>).'],
+        ['Answer', `<code>contract_end</code> inside the next ${WINDOW_DAYS} days.`],
+        ['Window', `${WINDOW_DAYS} days — the same constant as certificates.`],
+        ['Drill-down', 'people — name, position, contract, end date, days left.']
+      ],
+      rules: [
+        ['yes', `Contracts ending in 0–${WINDOW_DAYS} days`, 'Inclusive of today, exclusive of the horizon.'],
+        ['yes', 'Currently active staff', 'Counted once per person.'],
+        ['no', 'Already-ended contracts', 'Past dates are a different list — separations, not planning.'],
+        ['no', `Anything beyond ${WINDOW_DAYS} days`, 'Outside the window.'],
+        ['no', 'Blank end dates', 'No recorded end date is not an expiring contract.'],
+        ['no', 'Other schools', 'Scoped by <code>e.organization</code>.']
+      ],
+      tables: PEOPLE_TABLES('expiring-contracts'),
+      filters: [
+        { sql: 'e.organization = ?', plain: 'School scope.' },
+        WINDOW_RULE,
+        { sql: 'COUNT(DISTINCT e.person_id)', plain: 'One person with several contract rows counts once.' }
+      ],
+      countSql: CONTRACT_COUNT,
+      rowsSql: CONTRACT_ROWS,
+      caveat: peopleCaveat('<code>contract_end</code> is treated as authoritative'),
+      showCats: false
+    }
+  };
+
+  const ORDER = ['filled', 'vacant', 'authorized', 'expiring-certs', 'expiring-contracts'];
+
+  /* ---------- tiny SQL highlighter (line-based so comments stay comments) ---------- */
+  const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const KW = /\b(SELECT|FROM|LEFT JOIN|INNER JOIN|JOIN|ON|WHERE|AND|OR|NOT|LIKE|BETWEEN|ORDER BY|GROUP BY|LIMIT|OFFSET|COUNT|DISTINCT|AS|IFNULL|CAST|UNSIGNED|CONCAT|NOW|DATE_ADD|DATE_SUB|INTERVAL|DAY|DATEDIFF|ASC|DESC)\b/g;
+  function highlight(sql) {
+    return sql.split('\n').map((line) => {
+      if (/^\s*--/.test(line)) return '<span class="c">' + escapeHtml(line) + '</span>';
+      const code = escapeHtml(line);
+      const at = [];
+      let m;
+      const re = new RegExp(KW.source, 'g');
+      while ((m = re.exec(code)) !== null) at.push([m.index, m[0]]);
+      let out = '';
+      let last = 0;
+      for (const [i, word] of at) {
+        out += code.slice(last, i) + '<span class="k">' + word + '</span>';
+        last = i + word.length;
+      }
+      out += code.slice(last);
+      return out.replace(/\?/g, '<span class="p">?</span>');
+    }).join('\n');
+  }
+
+  /* ---------- render ---------- */
+  function render(key) {
+    const m = METRICS[key];
+    if (!m) return;
+    const title = `How &ldquo;${m.label}&rdquo; is calculated`;
+
+    document.title = `How “${m.label}” is calculated · ${SCHOOL}`;
+    document.getElementById('h1').innerHTML = title;
+    document.getElementById('crumbHere').innerHTML = title;
+    document.getElementById('sub').textContent = `${m.title} for ${SCHOOL} · metric=${key}`;
+    document.getElementById('backLink').href = 'kpi-drilldown-wcpss.html';
+
+    document.getElementById('metabar').innerHTML = [
+      ['Metric key', key],
+      ['Unit', m.unit === 'people' ? 'count of people' : 'count of positions'],
+      ['Drill-down', m.drilldown],
+      ['Grain', m.drilldown === 'people' ? 'one row per person' : 'one row per position']
+    ].map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
+
+    document.getElementById('chips').innerHTML = ORDER.map((k) =>
+      `<a href="?metric=${k}"${k === key ? ' aria-current="page"' : ''}>${METRICS[k].label}</a>`
+    ).join(' ');
+
+    document.getElementById('defLead').innerHTML = m.lead;
+    document.getElementById('defList').innerHTML = m.def
+      .map(([dt, dd]) => `<dt>${dt}</dt><dd>${dd}</dd>`).join('');
+
+    document.getElementById('rules').innerHTML = m.rules.map(([ok, rule, why]) =>
+      `<tr><td class="tick ${ok}">${ok === 'yes' ? 'Counts' : 'Excluded'}</td><td>${rule}</td><td>${why}</td></tr>`
+    ).join('');
+
+    document.getElementById('tables').innerHTML = m.tables.map((t) =>
+      `<tr><td>${t.table}</td><td>${t.cols}</td><td>${t.role}</td></tr>`
+    ).join('');
+
+    document.getElementById('filters').innerHTML = m.filters.map((f) =>
+      `<tr><td class="code">${f.sql}</td><td>${f.plain}</td></tr>`
+    ).join('');
+
+    document.getElementById('sqlHost').innerHTML =
+      `<div class="sql-head">Count — produces the tile value</div>` +
+      `<pre class="sql">${highlight(m.countSql)}</pre>` +
+      `<div class="sql-head">Rows — produces the drill-down list</div>` +
+      `<pre class="sql">${highlight(m.rowsSql)}</pre>`;
+
+    const catCard = document.getElementById('catCard');
+    if (m.showCats) {
+      catCard.hidden = false;
+      document.getElementById('catmap').innerHTML = CATMAP.map((c) =>
+        `<tr><td class="mono">${c.code}</td><td>${c.label}</td><td class="mono">${c.vacant}</td></tr>`
+      ).join('');
+    } else {
+      catCard.hidden = true;
+    }
+
+    document.getElementById('caveats').innerHTML = m.caveat;
+  }
+
+  const wanted = new URLSearchParams(location.search).get('metric');
+  render(METRICS[wanted] ? wanted : 'vacant');
+</script>
+</body>
+</html>

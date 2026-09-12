@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Flag, MessageSquare, Palette } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Flag, Gauge, MessageSquare, Palette } from 'lucide-react';
 import { getFeatureFlag, setFeatureFlag } from './api';
-import type { LoginSession } from './types';
+import { isFeatureFlagKey } from './types';
+import type { FeatureFlagsResponse, LoginSession } from './types';
 
 function errorMessage(failure: unknown, fallback: string): string {
   if (failure instanceof Error) {
@@ -65,11 +66,19 @@ function FeatureRow({
 
 // Admin-only Feature Flags page. Extracted from the Report Configuration tabs so
 // the list can grow without crowding the report settings.
-export function FeaturesPage({ session }: { session: LoginSession }) {
+//
+// `onFlagsChanged` hands every successful toggle to the app shell. Every flag
+// here gates something the shell has already rendered — a nav item, a whole
+// view, or a panel inside a position — so without this the switch would appear
+// to do nothing until the next page load.
+export function FeaturesPage({ session, onFlagsChanged }: { session: LoginSession; onFlagsChanged?: (flags: Partial<FeatureFlagsResponse>) => void }) {
   const [futureEnabled, setFutureEnabled] = useState(false);
   const [autoLookupEnabled, setAutoLookupEnabled] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [styleConfigEnabled, setStyleConfigEnabled] = useState(false);
+  // Defaults ON: the dashboard is already live, so the switch starts where the
+  // server's opt-out default says it should. See GET /api/feature-flags.
+  const [kpiEnabled, setKpiEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
@@ -83,6 +92,7 @@ export function FeaturesPage({ session }: { session: LoginSession }) {
         setAutoLookupEnabled(flags.employee_auto_lookup);
         setAiEnabled(flags.ai_assistant);
         setStyleConfigEnabled(flags.style_configuration);
+        setKpiEnabled(flags.kpi_dashboard);
       })
       .catch(() => setError('The feature flags could not be loaded.'))
       .finally(() => setLoading(false));
@@ -96,6 +106,12 @@ export function FeaturesPage({ session }: { session: LoginSession }) {
     try {
       const flag = await setFeatureFlag(session, key, next);
       setState(flag.enabled);
+      // Tell the shell about the flag so anything it already rendered keeps up.
+      if (isFeatureFlagKey(key)) {
+        const patch: Partial<FeatureFlagsResponse> = {};
+        patch[key] = flag.enabled;
+        onFlagsChanged?.(patch);
+      }
       setNotice(`${label} is now ${flag.enabled ? 'enabled' : 'disabled'}.`);
     } catch (failure) {
       setError(errorMessage(failure, 'The feature flag could not be updated.'));
@@ -112,7 +128,7 @@ export function FeaturesPage({ session }: { session: LoginSession }) {
         <div>
           <p className="eyebrow">Admin</p>
           <h2 id="features-title">Features.</h2>
-          <p className="reports-intro">Turn optional features on or off for everyone. Changes apply to all users; a page reload may be needed for a change to take effect for the current session.</p>
+          <p className="reports-intro">Turn optional features on or off for everyone. Your own session picks a change up straight away; everyone else sees it the next time the app loads.</p>
         </div>
       </div>
 
@@ -120,6 +136,18 @@ export function FeaturesPage({ session }: { session: LoginSession }) {
       {error && <div className="notice error"><AlertCircle size={18} /><span>{error}</span></div>}
 
       <div className="feature-list">
+        <div className="feature-group">
+          <h3 className="settings-section-title"><Gauge size={16} />KPI Dashboard</h3>
+          <p className="settings-section-desc">When enabled, a <strong>KPI Dashboard</strong> page appears in the navigation. Every tile and bar on it is clickable, opening the exact list behind the number along with its definition and read-only SQL. When disabled, the menu link is removed.</p>
+          <FeatureRow
+            enabled={kpiEnabled}
+            saving={saving}
+            title="Enable KPI Dashboard"
+            description="Show the KPI Dashboard link in the navigation."
+            onToggle={(next) => void toggle('kpi_dashboard', next, setKpiEnabled, 'KPI Dashboard')}
+          />
+        </div>
+
         <div className="feature-group">
           <h3 className="settings-section-title"><Flag size={16} />Future Positions (Beta)</h3>
           <p className="settings-section-desc">When enabled, staff can stage a new incumbent directly from a position's detail page. The record stays <strong>pending</strong> until it is sent for review, then the data team reviews it and marks it <strong>completed</strong>.</p>

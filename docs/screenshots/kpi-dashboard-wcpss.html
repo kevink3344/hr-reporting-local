@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en" data-style="wcpss" data-bg-image="none">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KPI Dashboard · Wake County Public Schools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* ------------------------------------------------------------------
+     Tokens mirror WCPSS_STYLE in client/src/styleThemes.ts exactly:
+       primary #165788 · accent #df6d1c · bg #ffffff · text #525252
+       main Open Sans · mono Roboto Mono · radius 4px · no bg gradient
+     ------------------------------------------------------------------ */
+  :root {
+    --style-primary: #165788;
+    --style-accent: #df6d1c;
+    --style-bg: #ffffff;
+    --style-text: #525252;
+    --style-radius: 4px;
+    --style-radius-sm: 2px;
+
+    --font-main: 'Open Sans', 'Segoe UI', sans-serif;
+    --font-mono: 'Roboto Mono', 'Courier New', monospace;
+
+    --navy: #165788;
+    --navy-dark: #10405f;
+    --orange: #df6d1c;
+    --ink: #525252;
+    --ink-strong: #23303a;
+    --muted: #7b8794;
+    --line: #dde3ea;
+    --line-soft: #eef1f5;
+    --surface: #fafbfc;
+    --focus: #165788;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-main);
+    background: var(--style-bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: 64px;
+  }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- header ---------- */
+  .topbar { height: 6px; background: var(--orange); }
+  .site-header { border-bottom: 1px solid var(--line); background: #fff; }
+  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 18px; padding-bottom: 18px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    font-family: var(--font-main);
+    font-weight: 700; font-size: 15px; letter-spacing: .06em;
+    color: #fff; background: var(--navy);
+    padding: 9px 11px; border-radius: var(--style-radius);
+  }
+  .brand-name { font-size: 17px; font-weight: 700; color: var(--ink-strong); letter-spacing: -.01em; }
+  .brand-sub { font-size: 12px; color: var(--muted); }
+  .header-note { font-size: 11px; color: var(--muted); text-align: right; max-width: 260px; line-height: 1.4; }
+
+  /* ---------- school selector ---------- */
+  .school-bar {
+    display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;
+    padding: 22px 0 18px; border-bottom: 1px solid var(--line-soft);
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label {
+    font-size: 11px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .combo { position: relative; display: inline-flex; align-items: center; }
+  select {
+    appearance: none;
+    font-family: var(--font-main); font-size: 14px; font-weight: 600; color: var(--ink-strong);
+    background: #fff; border: 1px solid var(--line); border-radius: var(--style-radius);
+    padding: 8px 38px 8px 12px; min-width: 290px; cursor: pointer;
+  }
+  select:hover { border-color: var(--navy); }
+  select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .combo::after {
+    content: ""; position: absolute; right: 14px; pointer-events: none;
+    width: 8px; height: 8px; border-right: 2px solid var(--navy); border-bottom: 2px solid var(--navy);
+    transform: rotate(45deg) translateY(-2px);
+  }
+
+  .scoped-meta { display: flex; gap: 26px; margin-left: auto; padding-bottom: 4px; }
+  .scoped-meta div { display: flex; flex-direction: column; gap: 2px; }
+  .scoped-meta .k { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .scoped-meta .v { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--ink-strong); }
+  .scoped-meta .v.warn { color: var(--orange); }
+
+  /* ---------- clickability hint ---------- */
+  .hint-row {
+    display: flex; align-items: center; gap: 9px;
+    margin: 20px 0 6px; font-size: 12.5px; color: var(--navy);
+    background: #f2f7fb; border: 1px solid #d7e6f2; border-left: 3px solid var(--navy);
+    border-radius: var(--style-radius); padding: 9px 12px;
+  }
+  .hint-row svg { flex: none; }
+  .hint-row b { font-weight: 700; }
+
+  /* ---------- section titles ---------- */
+  .section-title {
+    margin: 26px 0 12px; font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+
+  /* ---------- KPI tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+
+  .tile {
+    position: relative; background: #fff;
+    border: 1px solid var(--line); border-top: 3px solid var(--navy);
+    border-radius: var(--style-radius);
+    transition: box-shadow .13s ease, transform .13s ease, border-color .13s ease;
+  }
+  /* The tile body is a real <button>. The ⓘ is its SIBLING, never nested inside
+     it — interactive content cannot be nested inside a button. */
+  .tile-main {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    width: 100%; text-align: left; cursor: pointer;
+    font-family: var(--font-main); color: inherit;
+    background: none; border: 0; border-radius: var(--style-radius);
+    padding: 16px 42px 14px 16px;
+  }
+  .tile:hover { box-shadow: 0 4px 14px rgba(22, 87, 136, .14); transform: translateY(-1px); border-color: var(--navy); }
+  .tile:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .tile[data-tone="accent"] { border-top-color: var(--orange); }
+  .tile[data-tone="accent"]:hover { box-shadow: 0 4px 14px rgba(223, 109, 28, .16); border-color: var(--orange); }
+
+  .tile-value {
+    font-family: var(--font-mono); font-size: 34px; font-weight: 500; line-height: 1.05;
+    color: var(--navy); letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  }
+  .tile[data-tone="accent"] .tile-value { color: var(--orange); }
+  .tile-label { font-size: 13px; font-weight: 700; color: var(--ink-strong); margin-top: 2px; }
+  .tile-sub { font-size: 11.5px; color: var(--muted); }
+  .tile-open {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-top: 10px; font-size: 11.5px; font-weight: 700; color: var(--navy);
+    letter-spacing: .02em;
+  }
+  .tile[data-tone="accent"] .tile-open { color: var(--orange); }
+  .tile:hover .tile-open { text-decoration: underline; }
+
+  .info-btn {
+    position: absolute; top: 10px; right: 10px;
+    width: 22px; height: 22px; display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: 50%;
+    background: #fff; color: var(--muted); cursor: pointer;
+    font-family: Georgia, serif; font-size: 12px; font-weight: 700; font-style: italic;
+    line-height: 1; text-decoration: none;
+  }
+  .info-btn:hover { color: var(--navy); border-color: var(--navy); text-decoration: none; }
+  .info-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+  /* ---------- breakdown card ---------- */
+  .card {
+    background: #fff; border: 1px solid var(--line);
+    border-radius: var(--style-radius); margin-top: 26px; overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 18px;
+    flex-wrap: wrap; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); background: var(--surface);
+  }
+  .card-head h2 { font-size: 15px; font-weight: 700; color: var(--ink-strong); }
+  .card-head .card-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* segmented control — matches .segmented-control in styles.css */
+  .segmented {
+    display: inline-flex; border: 1px solid var(--line);
+    border-radius: var(--style-radius); overflow: hidden; background: #fff;
+  }
+  .segmented button {
+    font-family: var(--font-main); font-size: 12.5px; font-weight: 600; color: var(--ink);
+    background: #fff; border: 0; border-right: 1px solid var(--line);
+    padding: 7px 15px; cursor: pointer;
+  }
+  .segmented button:last-child { border-right: 0; }
+  .segmented button:hover { background: #f2f7fb; color: var(--navy); }
+  .segmented button[aria-checked="true"] { background: var(--navy); color: #fff; }
+  .segmented button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+  /* ---------- bar list (every row is a link) ---------- */
+  .bars { padding: 6px 18px 18px; }
+  .bar-row {
+    display: grid; grid-template-columns: 190px 1fr 74px;
+    align-items: center; gap: 14px;
+    width: 100%; text-align: left; cursor: pointer;
+    background: none; border: 0; border-bottom: 1px solid var(--line-soft);
+    padding: 11px 8px; font-family: var(--font-main); color: inherit;
+    border-radius: var(--style-radius-sm);
+  }
+  .bar-row:last-child { border-bottom: 0; }
+  .bar-row:hover { background: #f2f7fb; }
+  .bar-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .bar-name { font-size: 13px; font-weight: 600; color: var(--ink-strong); display: flex; align-items: center; gap: 7px; }
+  .bar-name .go { opacity: 0; color: var(--navy); transition: opacity .12s ease; }
+  .bar-row:hover .go, .bar-row:focus-visible .go { opacity: 1; }
+
+  .bar-track { height: 16px; background: var(--line-soft); border-radius: var(--style-radius-sm); overflow: hidden; }
+  .bar-fill {
+    display: block;            /* MUST be block — an inline fill collapses to 0x0 */
+    height: 100%; width: 0;
+    background: var(--navy);
+    border-radius: var(--style-radius-sm);
+    transition: width .3s ease;
+  }
+  .bar-fill[data-tone="accent"] { background: var(--orange); }
+  .bar-count {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+    color: var(--ink-strong); text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .bar-count small { color: var(--muted); font-weight: 400; }
+
+  .card-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 12px 18px; border-top: 1px solid var(--line-soft); background: var(--surface);
+    font-size: 12px; color: var(--muted);
+  }
+  .card-foot code { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); }
+
+  /* ---------- drill-down preview ---------- */
+  .preview {
+    margin-top: 22px; border: 1px solid #cfe0ee; border-left: 4px solid var(--orange);
+    background: #fffdfa; border-radius: var(--style-radius); padding: 15px 18px;
+  }
+  .preview .p-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--orange); }
+  .preview .p-title { font-size: 15px; font-weight: 700; color: var(--ink-strong); margin-top: 4px; }
+  .preview .p-body { font-size: 12.5px; color: var(--ink); margin-top: 5px; }
+  .preview .p-body code {
+    font-family: var(--font-mono); font-size: 11.5px;
+    background: #f2f7fb; border: 1px solid #d7e6f2; border-radius: 2px; padding: 1px 5px; color: var(--navy);
+  }
+  .preview .p-actions { margin-top: 11px; display: flex; gap: 10px; }
+  .btn {
+    font-family: var(--font-main); font-size: 12.5px; font-weight: 700;
+    border-radius: var(--style-radius); padding: 7px 14px; cursor: pointer;
+    border: 1px solid var(--navy); background: var(--navy); color: #fff;
+  }
+  .btn:hover { background: var(--navy-dark); border-color: var(--navy-dark); }
+  .btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .btn.ghost { background: #fff; color: var(--navy); }
+  .btn.ghost:hover { background: #f2f7fb; }
+
+  .footnote { margin-top: 30px; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+  .footnote b { color: var(--ink); }
+
+  @media (max-width: 880px) {
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .bar-row { grid-template-columns: 130px 1fr 64px; }
+    .scoped-meta { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tile, .bar-fill, .bar-name .go { transition: none; }
+    .tile:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar"></div>
+
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="brand-mark">WCPSS</span>
+        <div>
+          <div class="brand-name">Wake County Public Schools</div>
+          <div class="brand-sub">Human Resources &middot; KPI Dashboard</div>
+        </div>
+      </div>
+      <div class="header-note">
+        <b>Mock-up.</b> Illustrative figures for review &mdash; not live data.
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- school selector -->
+    <div class="school-bar">
+      <div class="field">
+        <label for="school">Select school</label>
+        <div class="combo">
+          <select id="school">
+            <option selected>Broughton High School</option>
+            <option>Athens High School - 318</option>
+            <option>Enloe High School</option>
+            <option>Sanderson High School</option>
+            <option>Leesville Road High School</option>
+          </select>
+        </div>
+      </div>
+      <div class="scoped-meta">
+        <div><span class="k">As of</span><span class="v">Sep 11, 2026</span></div>
+        <div><span class="k">Authorized</span><span class="v">141</span></div>
+        <div><span class="k">Vacancy rate</span><span class="v warn">14.9%</span></div>
+      </div>
+    </div>
+
+    <div class="hint-row">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#165788" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <span><b>Everything here is clickable.</b> Click a tile, a bar, or a category to open the list of positions behind that number.</span>
+    </div>
+
+    <!-- KPI tiles -->
+    <div class="section-title">Overview</div>
+    <div class="tiles" id="tiles">
+      <div class="tile" data-tone="navy">
+        <button class="tile-main" type="button" data-drill="filled"
+                aria-label="Filled positions, 120. Opens the list of filled positions.">
+          <span class="tile-value">120</span>
+          <span class="tile-label">Filled</span>
+          <span class="tile-sub">85.1% of authorized</span>
+          <span class="tile-open">View positions
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+        </button>
+        <a class="info-btn" href="kpi-definition-wcpss.html?metric=filled" aria-label="How is Filled calculated? Opens the definition page." title="How is this calculated?">i</a>
+      </div>
+
+      <div class="tile" data-tone="accent">
+        <button class="tile-main" type="button" data-drill="vacant"
+                aria-label="Vacant positions, 21. Opens the list of vacant positions.">
+          <span class="tile-value">21</span>
+          <span class="tile-label">Vacant</span>
+          <span class="tile-sub">14.9% of authorized</span>
+          <span class="tile-open">View positions
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+        </button>
+        <a class="info-btn" href="kpi-definition-wcpss.html?metric=vacant" aria-label="How is Vacant calculated? Opens the definition page." title="How is this calculated?">i</a>
+      </div>
+
+      <div class="tile" data-tone="navy">
+        <button class="tile-main" type="button" data-drill="expiring-certs"
+                aria-label="Expiring certifications, 21. Opens the list of people.">
+          <span class="tile-value">21</span>
+          <span class="tile-label">Expiring Certs</span>
+          <span class="tile-sub">within 180 days</span>
+          <span class="tile-open">View people
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+        </button>
+        <a class="info-btn" href="kpi-definition-wcpss.html?metric=expiring-certs" aria-label="How is Expiring Certs calculated? Opens the definition page." title="How is this calculated?">i</a>
+      </div>
+
+      <div class="tile" data-tone="navy">
+        <button class="tile-main" type="button" data-drill="expiring-contracts"
+                aria-label="Expiring contracts, 10. Opens the list of people.">
+          <span class="tile-value">10</span>
+          <span class="tile-label">Expiring Contracts</span>
+          <span class="tile-sub">within 180 days</span>
+          <span class="tile-open">View people
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+        </button>
+        <a class="info-btn" href="kpi-definition-wcpss.html?metric=expiring-contracts" aria-label="How is Expiring Contracts calculated? Opens the definition page." title="How is this calculated?">i</a>
+      </div>
+    </div>
+
+    <!-- breakdown -->
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Vacancies by Category</h2>
+          <div class="card-sub" id="cardSub">Showing all 141 authorized positions</div>
+        </div>
+        <div class="segmented" role="radiogroup" aria-label="Filter by status">
+          <button type="button" role="radio" aria-checked="false" data-facet="all">All</button>
+          <button type="button" role="radio" aria-checked="false" data-facet="filled">Filled</button>
+          <button type="button" role="radio" aria-checked="true" data-facet="vacant">Vacant</button>
+        </div>
+      </div>
+      <div class="bars" id="bars"></div>
+      <div class="card-foot">
+        <span>Each bar is a link &mdash; click to list those positions.</span>
+        <span>Excludes placeholder seats <code>pos_number LIKE '888%'</code></span>
+      </div>
+    </section>
+
+    <!-- drill-down preview -->
+    <div class="preview" id="preview" hidden>
+      <div class="p-eyebrow">Drill-down</div>
+      <div class="p-title" id="pTitle">&nbsp;</div>
+      <div class="p-body" id="pBody">&nbsp;</div>
+      <div class="p-actions">
+        <button class="btn" type="button" id="pOpen">Open list</button>
+        <button class="btn ghost" type="button" id="pClose">Dismiss</button>
+      </div>
+    </div>
+
+    <p class="footnote">
+      <b>About this mock.</b> Figures follow the layout sketch and are illustrative. The vacancy definition
+      (<b>open positions with a blank incumbent</b>), the <code>object</code> code &rarr; category label map, and the
+      expiry window (<b>180 days</b>) are all confirmed. No salary metric appears anywhere by requirement.
+      Planned behaviour: tile counts and drill-down lists are generated from one shared predicate, so the number
+      on a tile always equals the row count of the list it opens. The ⓘ links to the definition <b>page</b>
+      (<code>kpi-definition-wcpss.html</code>) &mdash; never a dialog.
+    </p>
+  </main>
+
+<script>
+  // Illustrative data. all = filled + vacant, so the facet is internally consistent.
+  const CATEGORIES = [
+    { name: 'Teachers',        vacant: 14, filled: 86 },
+    { name: 'Consultants',     vacant:  3, filled:  9 },
+    { name: 'Vice Principals', vacant:  2, filled:  6 },
+    { name: 'Assistants',      vacant:  1, filled: 12 },
+    { name: 'Custodians',      vacant:  1, filled:  7 }
+  ];
+
+  let facet = 'vacant';
+
+  const valueFor = (row) => (facet === 'all' ? row.vacant + row.filled : row[facet]);
+  const labelFor = () => (facet === 'all' ? 'all authorized' : facet);
+
+  function renderBars() {
+    const host = document.getElementById('bars');
+    const rows = CATEGORIES.map(c => ({ name: c.name, value: valueFor(c) })).filter(r => r.value > 0);
+    const max = Math.max(...rows.map(r => r.value), 1);
+    const showEmpty = rows.length === 0;
+
+    host.innerHTML = showEmpty
+      ? '<p style="padding:16px 8px;color:#7b8794;font-size:13px">No positions in this category — every authorized seat is filled.</p>'
+      : rows.map(r => `
+        <button class="bar-row" type="button"
+                data-category="${r.name}"
+                aria-label="${r.name}, ${r.value} ${labelFor()}. Opens the list.">
+          <span class="bar-name">${r.name}
+            <svg class="go" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+          <span class="bar-track"><span class="bar-fill" data-tone="${facet === 'vacant' ? 'accent' : 'navy'}" style="width:${(r.value / max * 100).toFixed(1)}%"></span></span>
+          <span class="bar-count">${r.value}${facet === 'all' ? ' <small>total</small>' : ''}</span>
+        </button>`).join('');
+
+    host.querySelectorAll('.bar-row').forEach(btn => {
+      btn.addEventListener('click', () => showPreview('category', btn.dataset.category));
+    });
+  }
+
+  function renderFacetSub() {
+    const totals = CATEGORIES.reduce((a, c) => {
+      a.vacant += c.vacant; a.filled += c.filled; return a;
+    }, { vacant: 0, filled: 0 });
+    const n = facet === 'all' ? totals.vacant + totals.filled : totals[facet];
+    const el = document.getElementById('cardSub');
+    el.textContent = facet === 'all'
+      ? `Showing all ${n} authorized positions`
+      : `Showing ${n} ${facet} position${n === 1 ? '' : 's'} of ${totals.vacant + totals.filled} authorized`;
+  }
+
+  const DRILL = {
+    filled:             { title: 'Filled positions',      count: 120, unit: 'positions' },
+    vacant:             { title: 'Vacant positions',      count: 21,  unit: 'positions' },
+    'expiring-certs':   { title: 'Expiring certifications', count: 21, unit: 'people' },
+    'expiring-contracts': { title: 'Expiring contracts',  count: 10,  unit: 'people' }
+  };
+
+  function showPreview(kind, category) {
+    const school = document.getElementById('school').value;
+    const box = document.getElementById('preview');
+    const title = document.getElementById('pTitle');
+    const body = document.getElementById('pBody');
+
+    if (kind === 'tile') {
+      const d = DRILL[category];
+      title.textContent = `${d.title} · ${school} (${d.count})`;
+      body.innerHTML = `Opens a page listing <b>${d.count} ${d.unit}</b>. ` +
+        `Filters: <code>school=${school}</code> <code>metric=${category}</code> <code>facet=all</code>`;
+    } else {
+      const row = CATEGORIES.find(c => c.name === category);
+      const n = valueFor(row);
+      title.textContent = `${n} ${labelFor()} ${category.toLowerCase()} · ${school}`;
+      body.innerHTML = `Opens the list pre-filtered to <b>${category}</b>. ` +
+        `Filters: <code>school=${school}</code> <code>metric=vacant</code> <code>facet=${facet}</code> <code>category=${category}</code>`;
+    }
+    box.hidden = false;
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // tiles (the body button, not the wrapper)
+  document.querySelectorAll('.tile-main').forEach(btn => {
+    btn.addEventListener('click', () => showPreview('tile', btn.dataset.drill));
+  });
+
+  // The ⓘ is a real link (<a class="info-btn">) to the definition PAGE — it needs no JS.
+  // Because it is a sibling of .tile-main rather than a child, it never triggers the tile.
+  // It is deliberately NOT a dialog: the definition, tables, columns and read-only SQL
+  // live at kpi-definition-wcpss.html so they are linkable, printable and citable.
+
+  // facet control
+  document.querySelectorAll('.segmented button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      facet = btn.dataset.facet;
+      document.querySelectorAll('.segmented button').forEach(b =>
+        b.setAttribute('aria-checked', String(b === btn)));
+      renderBars();
+      renderFacetSub();
+    });
+  });
+
+  document.getElementById('pClose').addEventListener('click', () => {
+    document.getElementById('preview').hidden = true;
+  });
+
+  document.getElementById('pOpen').addEventListener('click', () => {
+    // In the real app this navigates to /kpi/rows with the filters above.
+    // The mock goes to the static drill-down page so the click target is reviewable.
+    window.location.href = 'kpi-drilldown-wcpss.html';
+  });
+
+  document.getElementById('school').addEventListener('change', () => {
+    document.getElementById('preview').hidden = true;
+  });
+
+  renderBars();
+  renderFacetSub();
+</script>
+</body>
+</html>

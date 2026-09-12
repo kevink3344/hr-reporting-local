@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" data-style="wcpss" data-bg-image="none">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vacant positions · Broughton High School</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* Tokens mirror WCPSS_STYLE (client/src/styleThemes.ts) — see kpi-dashboard-wcpss.html */
+  :root {
+    --style-primary: #165788;
+    --style-accent: #df6d1c;
+    --style-bg: #ffffff;
+    --style-text: #525252;
+    --style-radius: 4px;
+    --style-radius-sm: 2px;
+
+    --font-main: 'Open Sans', 'Segoe UI', sans-serif;
+    --font-mono: 'Roboto Mono', 'Courier New', monospace;
+
+    --navy: #165788;
+    --navy-dark: #10405f;
+    --orange: #df6d1c;
+    --ink: #525252;
+    --ink-strong: #23303a;
+    --muted: #7b8794;
+    --line: #dde3ea;
+    --line-soft: #eef1f5;
+    --surface: #fafbfc;
+    --focus: #165788;
+    --vacant-bg: #fdf1e7;
+    --vacant-fg: #a8500f;
+    --filled-bg: #eaf3f9;
+    --filled-fg: #124a72;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-main);
+    background: var(--style-bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: 64px;
+  }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+  .topbar { height: 6px; background: var(--orange); }
+  .site-header { border-bottom: 1px solid var(--line); background: #fff; }
+  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 16px; padding-bottom: 16px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    font-weight: 700; font-size: 15px; letter-spacing: .06em;
+    color: #fff; background: var(--navy); padding: 8px 10px; border-radius: var(--style-radius);
+  }
+  .brand-name { font-size: 16px; font-weight: 700; color: var(--ink-strong); }
+  .brand-sub { font-size: 12px; color: var(--muted); }
+  .header-note { font-size: 11px; color: var(--muted); text-align: right; max-width: 240px; line-height: 1.4; }
+  .header-note b { color: var(--ink); }
+
+  /* ---------- breadcrumb / back ---------- */
+  .crumbs { display: flex; align-items: center; gap: 8px; padding: 18px 0 0; font-size: 12.5px; }
+  .crumbs a { color: var(--navy); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+  .crumbs a:hover { text-decoration: underline; }
+  .crumbs a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+  .crumbs .sep { color: var(--muted); }
+  .crumbs .here { color: var(--muted); }
+
+  /* ---------- page title ---------- */
+  .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; padding: 14px 0 18px; border-bottom: 1px solid var(--line-soft); }
+  .page-head h1 { font-size: 24px; font-weight: 700; color: var(--ink-strong); letter-spacing: -.01em; display: flex; align-items: center; gap: 11px; }
+  .count-badge {
+    font-family: var(--font-mono); font-size: 14px; font-weight: 500;
+    background: var(--vacant-bg); color: var(--vacant-fg);
+    border: 1px solid #f2d3b8; border-radius: var(--style-radius); padding: 2px 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .page-head .sub { font-size: 13px; color: var(--muted); margin-top: 5px; }
+  .page-head-actions { display: flex; align-items: center; gap: 10px; }
+
+  .btn {
+    font-family: var(--font-main); font-size: 12.5px; font-weight: 700;
+    border: 1px solid var(--navy); background: var(--navy); color: #fff;
+    border-radius: var(--style-radius); padding: 8px 14px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .btn:hover { background: var(--navy-dark); border-color: var(--navy-dark); }
+  .btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .btn.ghost { background: #fff; color: var(--navy); }
+  .btn.ghost:hover { background: #f2f7fb; }
+
+  /* ---------- toolbar ---------- */
+  .toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;
+    padding: 16px 0 14px;
+  }
+
+  .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--style-radius); overflow: hidden; background: #fff; }
+  .segmented button {
+    font-family: var(--font-main); font-size: 12.5px; font-weight: 600; color: var(--ink);
+    background: #fff; border: 0; border-right: 1px solid var(--line); padding: 8px 16px; cursor: pointer;
+  }
+  .segmented button:last-child { border-right: 0; }
+  .segmented button:hover { background: #f2f7fb; color: var(--navy); }
+  .segmented button[aria-checked="true"] { background: var(--navy); color: #fff; }
+  .segmented button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+  .search-wrap { position: relative; display: inline-flex; align-items: center; }
+  .search-wrap svg { position: absolute; left: 10px; color: var(--muted); pointer-events: none; }
+  input[type="search"] {
+    font-family: var(--font-main); font-size: 13.5px; color: var(--ink-strong);
+    border: 1px solid var(--line); border-radius: var(--style-radius);
+    padding: 8px 12px 8px 32px; width: 290px; background: #fff;
+  }
+  input[type="search"]:hover { border-color: var(--navy); }
+  input[type="search"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+  /* ---------- table ---------- */
+  .table-wrap { border: 1px solid var(--line); border-radius: var(--style-radius); overflow-x: auto; background: #fff; }
+  table { width: 100%; min-width: 700px; border-collapse: collapse; }
+  caption { text-align: left; padding: 11px 16px; font-size: 12px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--line-soft); }
+  caption b { color: var(--ink-strong); }
+  thead th {
+    text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+    color: #fff; background: var(--navy); padding: 10px 14px; white-space: nowrap;
+  }
+  thead th.num { text-align: right; }
+  tbody td { padding: 10px 14px; border-bottom: 1px solid var(--line-soft); font-size: 13px; vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f2f7fb; }
+  tbody tr:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+  .mono { font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink-strong); }
+  td.acct { white-space: nowrap; font-size: 12px; color: var(--ink); }
+  td.num { text-align: right; }
+  .pos-name { font-weight: 600; color: var(--ink-strong); white-space: nowrap; }
+  .person { color: var(--ink); }
+  .person.none { color: var(--muted); font-style: italic; }
+  tbody td:nth-child(1), tbody td:nth-child(3), tbody td:nth-child(5), tbody td:nth-child(6) { white-space: nowrap; }
+
+  .pill {
+    display: inline-block; font-size: 11.5px; font-weight: 700; border-radius: var(--style-radius);
+    padding: 2px 9px; white-space: nowrap;
+  }
+  .pill.vacant { background: var(--vacant-bg); color: var(--vacant-fg); border: 1px solid #f2d3b8; }
+  .pill.filled { background: var(--filled-bg); color: var(--filled-fg); border: 1px solid #cfe2f0; }
+
+  .row-info {
+    width: 24px; height: 24px; display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: 50%; background: #fff;
+    color: var(--muted); cursor: pointer; font-family: Georgia, serif; font-weight: 700; font-style: italic; font-size: 12px;
+  }
+  .row-info:hover { color: var(--navy); border-color: var(--navy); }
+  .row-info:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+  .empty { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 13.5px; }
+
+  /* ---------- pagination ---------- */
+  .table-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 12px 16px; border-top: 1px solid var(--line-soft); background: var(--surface); font-size: 12.5px; color: var(--muted);
+  }
+  .pager { display: flex; align-items: center; gap: 6px; }
+  .pager button {
+    font-family: var(--font-mono); font-size: 12.5px; min-width: 30px; height: 30px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: var(--style-radius); cursor: pointer;
+  }
+  .pager button:hover:not(:disabled) { border-color: var(--navy); color: var(--navy); }
+  .pager button[aria-current="page"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .pager button:disabled { opacity: .45; cursor: default; }
+  .pager button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+  /* ---------- caveat ---------- */
+  .caveat {
+    display: flex; gap: 11px; align-items: flex-start;
+    margin-top: 18px; padding: 12px 15px; font-size: 12.5px; line-height: 1.55;
+    background: #f2f7fb; border: 1px solid #d7e6f2; border-left: 3px solid var(--navy);
+    border-radius: var(--style-radius); color: var(--ink);
+  }
+  .caveat b { color: var(--ink-strong); }
+  .caveat code { font-family: var(--font-mono); font-size: 11.5px; background: #fff; border: 1px solid #d7e6f2; border-radius: 2px; padding: 1px 5px; color: var(--navy); }
+  .caveat a { color: var(--navy); font-weight: 700; }
+
+  .footnote { margin-top: 26px; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+
+  @media (max-width: 900px) {
+    .toolbar { align-items: stretch; }
+    input[type="search"] { width: 100%; }
+    .search-wrap { flex: 1; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar"></div>
+
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="brand-mark">WCPSS</span>
+        <div>
+          <div class="brand-name">Wake County Public Schools</div>
+          <div class="brand-sub">Human Resources &middot; KPI Dashboard</div>
+        </div>
+      </div>
+      <div class="header-note"><b>Mock-up.</b> Illustrative rows for review &mdash; not live data.</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="kpi-dashboard-wcpss.html">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        Back to KPI dashboard
+      </a>
+      <span class="sep">/</span>
+      <span class="here">Broughton High School</span>
+      <span class="sep">/</span>
+      <span class="here">Vacant positions</span>
+    </nav>
+
+    <div class="page-head">
+      <div>
+        <h1>Vacant positions <span class="count-badge" id="headCount">21</span></h1>
+        <div class="sub" id="headSub">Broughton High School &middot; authorized positions with no active incumbent &middot; as of Sep 11, 2026</div>
+      </div>
+      <div class="page-head-actions">
+        <button class="btn ghost" type="button" id="explainBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          How is &ldquo;Vacant&rdquo; calculated?
+        </button>
+        <button class="btn" type="button" id="csvBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Export CSV
+        </button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="segmented" role="radiogroup" aria-label="Filter by status">
+        <button type="button" role="radio" aria-checked="false" data-facet="all">All</button>
+        <button type="button" role="radio" aria-checked="false" data-facet="filled">Filled</button>
+        <button type="button" role="radio" aria-checked="true" data-facet="vacant">Vacant</button>
+      </div>
+      <div class="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="search" id="q" placeholder="Filter by position, number, or account&hellip;" aria-label="Filter positions" />
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <caption>
+          <b id="capMetric">Vacant positions</b> &mdash; Broughton High School, as of Sep 11, 2026.
+          <span id="capCount">21 rows.</span>
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Pos&nbsp;#</th>
+            <th scope="col">Position</th>
+            <th scope="col">Category</th>
+            <th scope="col">Account</th>
+            <th scope="col" class="num">Months</th>
+            <th scope="col">Incumbent</th>
+            <th scope="col">Status</th>
+            <th scope="col"><span class="visually-hidden">Details</span></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <div class="table-foot">
+      <span id="rangeText">&nbsp;</span>
+      <div class="pager" id="pager"></div>
+    </div>
+
+    <div class="caveat">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#165788" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <div>
+        <b>Why this list and the tile always agree.</b> The &ldquo;Vacant&rdquo; tile (21) and this list are generated from a single
+        shared predicate &mdash; <code>open positions</code> &middot; <code>incumbent = absent</code> &mdash; so the row count here
+        can never drift from the number on the dashboard. Placeholder seats are excluded
+        (<code>pos_number NOT LIKE '888%'</code>), and ended seats are excluded
+        (<code>pos_ending &gt; NOW() OR pos_ending LIKE '0000-00-00%'</code>).
+        <a href="kpi-definition-wcpss.html?metric=vacant" id="explainLink2">See the definition and read-only SQL &rarr;</a>
+      </div>
+    </div>
+
+    <p class="footnote">
+      <b>About this mock.</b> Position numbers, account numbers and incumbent names are illustrative. The real page
+      reuses <code>OPEN_POSITIONS_SQL</code> from <code>src/repositories/mysql-repository.ts</code> and paginates with
+      <code>REPORT_ROW_CAP</code>. Clicking any row opens the existing position details drawer; the ⓘ and the
+      &ldquo;how is this calculated?&rdquo; button open the definition <b>page</b>
+      (<code>kpi-definition-wcpss.html</code>) &mdash; never a dialog.
+    </p>
+  </main>
+
+<script>
+  /* ------------------------------------------------------------------
+     Illustrative data. Shaped like OpenPositionRow so the mock exercises
+     the same columns the real drill-down will render.
+     ------------------------------------------------------------------ */
+  const VACANT = [
+    { pos: '40012', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40013', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40014', name: 'Teacher-EC',                cat: 'Teachers',        account: '01-5400-003-156-0109-0318', months: 10 },
+    { pos: '40018', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40021', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40025', name: 'Teacher-EC',                cat: 'Teachers',        account: '01-5400-003-156-0109-0318', months: 10 },
+    { pos: '40027', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40031', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40033', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40038', name: 'Teacher-EC',                cat: 'Teachers',        account: '01-5400-003-156-0109-0318', months: 10 },
+    { pos: '40041', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40044', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40047', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40050', name: 'Teacher-Regular Classroom', cat: 'Teachers',        account: '01-5400-003-151-0109-0318', months: 10 },
+    { pos: '40070', name: 'Consultant-Curriculum',     cat: 'Consultants',     account: '01-5400-003-152-0109-0318', months: 12 },
+    { pos: '40075', name: 'Consultant-Instructional',  cat: 'Consultants',     account: '01-5400-003-152-0109-0318', months: 12 },
+    { pos: '40082', name: 'Consultant-Data',           cat: 'Consultants',     account: '01-5400-003-152-0109-0318', months: 12 },
+    { pos: '40088', name: 'Vice Principal',            cat: 'Vice Principals', account: '01-5400-003-101-0109-0318', months: 12 },
+    { pos: '40091', name: 'Vice Principal',            cat: 'Vice Principals', account: '01-5400-003-101-0109-0318', months: 12 },
+    { pos: '40095', name: 'Teacher Assistant',         cat: 'Assistants',      account: '01-5400-003-161-0109-0318', months: 10 },
+    { pos: '40102', name: 'Custodian',                 cat: 'Custodians',      account: '01-5400-003-162-0109-0318', months: 12 }
+  ].map(r => ({ ...r, status: 'vacant', person: '' }));
+
+  // 120 filled rows, generated so the facet + pagination are demonstrable.
+  const FIRST = ['Aisha','Marcus','Elena','Tyrone','Priya','Dana','Miguel','Ruth','Kwame','Sofia','Ivan','Nora','Andre','Lucia','Hassan','Grace','Peter','Mei','Carlos','Yvonne','Ethan','Leah','Omar','Clara','Devon','Rosa','Simon','Nadia','Josiah','Tanya'];
+  const LAST  = ['Okafor','Whitfield','Ramirez','Boyle','Nair','Sullivan','Delgado','Kim','Boateng','Petrov','Nguyen','Alvarez','Cohen','Ali','Mensah','Rivera','Novak','Hughes','Silva','Yamamoto'];
+  const FILLED_ACCOUNT = '01-5400-003-151-0109-0318';
+  const FILLED = Array.from({ length: 120 }, (_, i) => ({
+    pos: String(41100 + i),
+    name: i % 9 === 0 ? 'Teacher-EC' : 'Teacher-Regular Classroom',
+    cat: 'Teachers',
+    account: FILLED_ACCOUNT,
+    months: 10,
+    status: 'filled',
+    person: `${FIRST[i % FIRST.length]} ${LAST[(i * 7) % LAST.length]}`
+  }));
+
+  const ALL = [...FILLED, ...VACANT];
+
+  const LABEL = { all: 'All', filled: 'Filled', vacant: 'Vacant' };
+  const PAGE_SIZE = 25;
+
+  let facet = 'vacant';
+  let q = '';
+  let page = 1;
+
+  function current() {
+    const base = facet === 'all' ? ALL : facet === 'filled' ? FILLED : VACANT;
+    if (!q.trim()) return base;
+    const needle = q.trim().toLowerCase();
+    return base.filter(r =>
+      r.pos.includes(needle) ||
+      r.name.toLowerCase().includes(needle) ||
+      r.account.includes(needle) ||
+      r.person.toLowerCase().includes(needle) ||
+      r.cat.toLowerCase().includes(needle));
+  }
+
+  function render() {
+    const rows = current();
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (page > pages) page = pages;
+    const start = (page - 1) * PAGE_SIZE;
+    const slice = rows.slice(start, start + PAGE_SIZE);
+
+    // header + caption
+    const label = q.trim() ? `${LABEL[facet]} &mdash; filtered` : `${LABEL[facet]} positions`;
+    document.getElementById('headCount').textContent = total;
+    document.getElementById('capMetric').textContent = `${LABEL[facet]} positions`;
+    document.getElementById('capCount').textContent = `${total} row${total === 1 ? '' : 's'}.`;
+    document.getElementById('headSub').innerHTML = q.trim()
+      ? `Broughton High School &middot; filtered by &ldquo;${q.trim().replace(/</g,'&lt;')}&rdquo; &middot; ${label}`
+      : `Broughton High School &middot; ${facet === 'vacant' ? 'authorized positions with no active incumbent' : facet === 'filled' ? 'authorized positions with an active incumbent' : 'all authorized positions'} &middot; as of Sep 11, 2026`;
+
+    const body = document.getElementById('rows');
+    body.innerHTML = slice.length === 0
+      ? `<tr><td colspan="8"><div class="empty">No positions match this filter.<br><span style="font-size:12.5px">Try clearing the search or switching back to <b>Vacant</b>.</span></div></td></tr>`
+      : slice.map(r => `
+          <tr tabindex="0" data-pos="${r.pos}" aria-label="Position ${r.pos}, ${r.name}, ${r.status}">
+            <td class="mono">${r.pos}</td>
+            <td class="pos-name">${r.name}</td>
+            <td>${r.cat}</td>
+            <td class="mono acct">${r.account}</td>
+            <td class="num mono">${r.months}</td>
+            <td class="person ${r.person ? '' : 'none'}">${r.person || '&mdash; vacant &mdash;'}</td>
+            <td><span class="pill ${r.status}">${r.status === 'vacant' ? 'Vacant' : 'Filled'}</span></td>
+            <td><span class="row-info" role="button" tabindex="0" aria-label="How is position ${r.pos} classified? Opens the definition page.">i</span></td>
+          </tr>`).join('');
+
+    // pagination
+    document.getElementById('rangeText').innerHTML = total === 0
+      ? 'No rows'
+      : `Showing <b class="mono">${start + 1}&ndash;${Math.min(start + PAGE_SIZE, total)}</b> of <b class="mono">${total}</b>`;
+
+    const pager = document.getElementById('pager');
+    let html = `<button type="button" data-page="${page - 1}" ${page === 1 ? 'disabled' : ''} aria-label="Previous page">&lsaquo;</button>`;
+    for (let p = 1; p <= pages; p++) {
+      html += `<button type="button" data-page="${p}" ${p === page ? 'aria-current="page"' : ''}>${p}</button>`;
+    }
+    html += `<button type="button" data-page="${page + 1}" ${page === pages ? 'disabled' : ''} aria-label="Next page">&rsaquo;</button>`;
+    pager.innerHTML = html;
+  }
+
+  // facet
+  document.querySelectorAll('.segmented button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      facet = btn.dataset.facet;
+      page = 1;
+      document.querySelectorAll('.segmented button').forEach(b => b.setAttribute('aria-checked', String(b === btn)));
+      render();
+    });
+  });
+
+  // search
+  document.getElementById('q').addEventListener('input', (e) => { q = e.target.value; page = 1; render(); });
+
+  // pager (delegated)
+  document.getElementById('pager').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-page]');
+    if (!btn || btn.disabled) return;
+    page = Number(btn.dataset.page);
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // row → position details drawer; ⓘ → the definition PAGE, without also opening the row
+  document.getElementById('rows').addEventListener('click', (e) => {
+    const info = e.target.closest('.row-info');
+    const tr = e.target.closest('tr[data-pos]');
+    if (!tr) return;
+    if (info) {
+      e.stopPropagation();
+      // ⓘ is a link to a page, not a dialog.
+      window.location.href = 'kpi-definition-wcpss.html?metric=vacant';
+      return;
+    }
+    alert(`In the app this opens the position details drawer for position ${tr.dataset.pos}.`);
+  });
+  document.getElementById('rows').addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('tr[data-pos]')) {
+      e.preventDefault();
+      e.target.closest('tr[data-pos]').click();
+    }
+  });
+
+  // The definition is a PAGE, not a dialog — no alerts anywhere on this page.
+  const explain = (e) => {
+    if (e) e.preventDefault();
+    window.location.href = 'kpi-definition-wcpss.html?metric=vacant';
+  };
+  document.getElementById('explainBtn').addEventListener('click', explain);
+  document.getElementById('explainLink2').addEventListener('click', explain);
+
+  document.getElementById('csvBtn').addEventListener('click', () => {
+    alert(`Export CSV\n\nWould download ${current().length} row(s) for the current filter\n(school + metric + facet + search). No salary columns are ever included.`);
+  });
+
+  render();
+</script>
+</body>
+</html>

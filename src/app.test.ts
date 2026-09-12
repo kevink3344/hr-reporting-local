@@ -1,6 +1,19 @@
 import { createServer, type Server } from 'node:http';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from './app.js';
+import {
+  EXPIRY_WINDOW_DAYS,
+  KPI_BAR_LIMIT,
+  KPI_METRIC_KEYS,
+  KPI_PAGE_SIZE_MAX,
+  KPI_STRIP_ORDER,
+  KPI_TILE_ORDER,
+  defaultFacetFor,
+  getKpiMetric
+} from './kpi-definitions.js';
+import type { KpiFacet, KpiMetricKey, SchoolKpiPayload, SchoolKpiRows } from './types.js';
 
 describe('HR Reporting API foundation', () => {
   let server: Server;
@@ -236,7 +249,31 @@ describe('Feature flags', () => {
     const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
     expect(response.status).toBe(200);
     const flags = await response.json();
-    expect(Object.keys(flags).sort()).toEqual(['ai_assistant', 'employee_auto_lookup', 'future_positions', 'style_configuration']);
+    expect(Object.keys(flags).sort()).toEqual(['ai_assistant', 'employee_auto_lookup', 'future_positions', 'kpi_dashboard', 'style_configuration']);
+  });
+
+  it('defaults kpi_dashboard to on because the dashboard is already live', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
+    expect(response.status).toBe(200);
+    const flags = await response.json();
+    // The only opt-out flag: an unseeded database must not hide a shipped page.
+    expect(flags.kpi_dashboard).toBe(true);
+  });
+
+  it('hides the KPI Dashboard without disturbing the opt-in flags', async () => {
+    const off = await fetch(`${baseUrl}/api/feature-flags/kpi_dashboard`, {
+      method: 'PATCH',
+      headers: { ...admin, 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ key: 'kpi_dashboard', enabled: false });
+
+    const flags = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+    expect(flags.kpi_dashboard).toBe(false);
+    expect(flags.future_positions).toBe(false);
+    expect(flags.ai_assistant).toBe(false);
+    expect(flags.style_configuration).toBe(false);
   });
 
   it('defaults style_configuration to off so the feature ships hidden', async () => {
@@ -470,5 +507,520 @@ describe('Configurable reports API', () => {
 
     expect((await fetch(`${baseUrl}/api/reports/${report.id}`, { method: 'DELETE', headers: admin })).status).toBe(204);
     expect((await fetch(`${baseUrl}/api/report-sections/${created.id}`, { method: 'DELETE', headers: admin })).status).toBe(204);
+  });
+});
+
+/**
+ * The clickable KPI dashboard.
+ *
+ * These run against the fixture backend, which drives the SAME pure builders
+ * (`buildSchoolKpiPayload` / `buildSchoolKpiRows`) as MySQL, so the metric maths
+ * is under test for real and the assertions are deterministic.
+ *
+ * Fixture arithmetic for `school-001` (Test Oak Elementary) is fixed by
+ * `fixtureKpiSeeds`: 8 authorized seats, 4 filled (one of which has a contract
+ * ending in 45 days and another a certificate expiring in 30 days, plus one more
+ * of each), 4 vacant.
+ */
+describe('Clickable KPI dashboard', () => {
+  let server: Server;
+  let baseUrl: string;
+
+  const OAK = 'school-001'; // Test Oak Elementary — 8 seats / 4 filled / 4 vacant
+  const RIVER = 'school-002'; // Test River High — 2 seats / 1 filled / 1 vacant
+
+  const getJson = async <T>(path: string, headers?: Record<string, string>): Promise<{ status: number; body: T }> => {
+    const response = await fetch(`${baseUrl}${path}`, { headers });
+    return { status: response.status, body: (await response.json()) as T };
+  };
+
+  const dashboard = async (schoolId: string, facet?: string): Promise<SchoolKpiPayload> => {
+    const suffix = facet ? `&facet=${facet}` : '';
+    const { status, body } = await getJson<SchoolKpiPayload>(`/api/schools/kpi?schoolId=${schoolId}${suffix}`);
+    expect(status).toBe(200);
+    return body;
+  };
+
+  const rows = async (params: string): Promise<SchoolKpiRows> => {
+    const { status, body } = await getJson<SchoolKpiRows>(`/api/schools/kpi/rows?${params}`);
+    expect(status).toBe(200);
+    return body;
+  };
+
+  beforeEach(async () => {
+    server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  });
+
+  // -- Payload shape ------------------------------------------------------
+
+  it('returns four tiles in display order and the two headline strip metrics', async () => {
+    const payload = await dashboard(OAK);
+
+    expect(payload.school).toBe('Test Oak Elementary');
+    expect(payload.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(payload.windowDays).toBe(EXPIRY_WINDOW_DAYS);
+    expect(payload.facet).toBe('all');
+    expect(payload.tiles.map((tile) => tile.key)).toEqual(KPI_TILE_ORDER);
+    expect(payload.strip.map((metric) => metric.key)).toEqual(KPI_STRIP_ORDER);
+  });
+
+  it('computes the fixture numbers exactly', async () => {
+    const payload = await dashboard(OAK);
+    const byKey = Object.fromEntries([...payload.tiles, ...payload.strip].map((m) => [m.key, m]));
+
+    expect(byKey.filled.value).toBe(4);
+    expect(byKey.vacant.value).toBe(4);
+    expect(byKey.authorized.value).toBe(8);
+    expect(byKey['expiring-certs'].value).toBe(2);
+    expect(byKey['expiring-contracts'].value).toBe(2);
+    expect(byKey['vacancy-rate'].value).toBe(50);
+    expect(byKey['vacancy-rate'].displayValue).toBe('50.0%');
+    expect(byKey.filled.displayValue).toBe('4');
+  });
+
+  it('re-scopes every number when the school changes', async () => {
+    const river = await dashboard(RIVER);
+    const byKey = Object.fromEntries([...river.tiles, ...river.strip].map((m) => [m.key, m]));
+
+    expect(river.school).toBe('Test River High');
+    expect(byKey.authorized.value).toBe(2);
+    expect(byKey.filled.value).toBe(1);
+    expect(byKey.vacant.value).toBe(1);
+    expect(byKey['vacancy-rate'].value).toBe(50);
+    // River has no seats inside either expiry window.
+    expect(byKey['expiring-certs'].value).toBe(0);
+    expect(byKey['expiring-contracts'].value).toBe(0);
+  });
+
+  it('carries the documentation prose needed to render a tile and its ⓘ link', async () => {
+    const payload = await dashboard(OAK);
+    for (const metric of [...payload.tiles, ...payload.strip]) {
+      expect(metric.label.length).toBeGreaterThan(0);
+      expect(metric.definition.length).toBeGreaterThan(0);
+      expect(metric.note.length).toBeGreaterThan(0);
+      expect(metric.drillable).toBe(metric.drilldown !== null);
+      // The facet the drill-down opens with comes from the server, so the
+      // client never has to guess that "Vacant" implies `facet=vacant`.
+      expect(metric.defaultFacet).toBe(defaultFacetFor(getKpiMetric(metric.key)));
+    }
+    expect(payload.tiles.find((tile) => tile.key === 'filled')?.defaultFacet).toBe('filled');
+    expect(payload.tiles.find((tile) => tile.key === 'vacant')?.defaultFacet).toBe('vacant');
+    expect(payload.strip.find((m) => m.key === 'authorized')?.defaultFacet).toBe('all');
+  });
+
+  it('breaks down by Position Title, truncated to the bar limit', async () => {
+    const { breakdown } = await dashboard(OAK);
+
+    expect(breakdown.axis).toBe('pos_name');
+    expect(breakdown.limit).toBe(KPI_BAR_LIMIT);
+    // 5 distinct titles across the 8 seats: Teacher, Assistant Principal,
+    // Principal, Counselor, Media Specialist.
+    expect(breakdown.titleCount).toBe(5);
+    expect(breakdown.truncated).toBe(breakdown.titleCount > KPI_BAR_LIMIT);
+    expect(breakdown.truncated).toBe(false);
+    expect(breakdown.bars).toHaveLength(Math.min(breakdown.titleCount, KPI_BAR_LIMIT));
+    // Bars are ordered by count descending and labels are the raw Position Title.
+    const values = breakdown.bars.map((bar) => bar.value);
+    expect([...values].sort((a, b) => b - a)).toEqual(values);
+    expect(breakdown.bars.map((bar) => bar.label)).toContain('Teacher');
+    expect(breakdown.bars.find((bar) => bar.label === 'Teacher')?.value).toBe(3);
+  });
+
+  it('sums the All-facet bars to the whole seat universe', async () => {
+    const { breakdown } = await dashboard(OAK, 'all');
+    const total = breakdown.bars.reduce((sum, bar) => sum + bar.value, 0);
+    expect(total).toBe(8);
+
+    const vacant = await dashboard(OAK, 'vacant');
+    // Vacant seats: Assistant Principal, Teacher, Counselor, Media Specialist.
+    expect(vacant.breakdown.titleCount).toBe(4);
+    expect(vacant.breakdown.bars.reduce((sum, bar) => sum + bar.value, 0)).toBe(4);
+    expect(vacant.breakdown.title).not.toBe(breakdown.title);
+    expect(vacant.breakdown.bars.find((bar) => bar.label === 'Teacher')?.value).toBe(1);
+  });
+
+  // -- The click contract (§11.1) -----------------------------------------
+
+  it('agrees with the tile for EVERY metric, with and without a facet', async () => {
+    const payload = await dashboard(OAK);
+    const all = [...payload.tiles, ...payload.strip];
+    const byKey = Object.fromEntries(all.map((metric) => [metric.key, metric]));
+    const seen = new Set<KpiMetricKey>();
+
+    for (const metric of all) {
+      // A share metric has no row count of its own: its `metricValue` is the
+      // numerator (the vacancies) and its list is that same set, so only `total`
+      // is comparable to it — not the percentage the tile shows.
+      const isShare = metric.key === 'vacancy-rate';
+
+      // (a) shortest possible call — no facet at all. This is the parity the
+      // plan asks for literally: value === total.
+      const bare = await rows(`schoolId=${OAK}&metric=${metric.key}`);
+      expect(bare.metric).toBe(metric.key);
+      expect(bare.facet).toBe(metric.defaultFacet);
+      if (isShare) {
+        expect(bare.metricValue).toBe(byKey.vacant.value);
+        expect(bare.total).toBe(bare.metricValue);
+      } else {
+        expect(bare.metricValue).toBe(metric.value);
+        expect(bare.total).toBe(metric.value);
+      }
+
+      // (b) the facet the client is told to open with gives the same answer.
+      const withFacet = await rows(`schoolId=${OAK}&metric=${metric.key}&facet=${metric.defaultFacet}`);
+      expect(withFacet.total).toBe(bare.total);
+
+      // (c) every tile points its drill-down at a real list that opens on the
+      // same facet the tile implies.
+      expect(metric.drilldown).not.toBeNull();
+      const viaDrilldown = await rows(`schoolId=${OAK}&metric=${metric.drilldown}&facet=${metric.defaultFacet}`);
+      expect(viaDrilldown.metric).toBe(metric.drilldown);
+
+      seen.add(metric.key);
+    }
+
+    expect(seen.size).toBe(payload.tiles.length + payload.strip.length);
+  });
+
+  it('agrees for the catalog metrics that have no tile', async () => {
+    // `active-staff` is documented and reachable from the definition page but
+    // deliberately has no tile (the strip carries Authorized + vacancy rate).
+    expect(KPI_TILE_ORDER).not.toContain('active-staff');
+    const list = await rows(`schoolId=${OAK}&metric=active-staff`);
+    expect(list.metric).toBe('active-staff');
+    expect(list.unit).toBe('people');
+    expect(list.total).toBe(4); // 4 distinct incumbents across the 4 filled seats
+  });
+
+  // -- Facets (§11.4) -----------------------------------------------------
+
+  it('agrees facet chips with the list, and always sums to All', async () => {
+    for (const metric of KPI_METRIC_KEYS) {
+      const bare = await rows(`schoolId=${OAK}&metric=${metric}`);
+      // A chip is a promise about what clicking it will show, so every chip must
+      // equal the unfiltered list length for that same facet.
+      for (const facet of ['all', 'filled', 'vacant'] as const) {
+        const list = await rows(`schoolId=${OAK}&metric=${metric}&facet=${facet}`);
+        expect(list.facetCounts[facet]).toBe(list.total);
+      }
+      expect(bare.facetCounts.all).toBe(bare.facetCounts.filled + bare.facetCounts.vacant);
+    }
+  });
+
+  it('describes the full seat universe for the position metrics', async () => {
+    // Every seat-grain metric reports the same chips: 8 seats, 4 filled, 4 open.
+    for (const metric of ['authorized', 'filled', 'vacant', 'vacancy-rate'] as const) {
+      const list = await rows(`schoolId=${OAK}&metric=${metric}`);
+      expect({ metric, counts: list.facetCounts }).toEqual({ metric, counts: { all: 8, filled: 4, vacant: 4 } });
+    }
+  });
+
+  it('reports the same facet counts whichever facet is requested', async () => {
+    const counts = await Promise.all(
+      (['all', 'filled', 'vacant'] as const).map(
+        async (facet) => (await rows(`schoolId=${OAK}&metric=vacant&facet=${facet}`)).facetCounts
+      )
+    );
+    expect(counts[0]).toEqual(counts[1]);
+    expect(counts[1]).toEqual(counts[2]);
+  });
+
+  it('widens past the metric when the facet moves to All', async () => {
+    const vacantOnly = await rows(`schoolId=${OAK}&metric=vacant&facet=vacant`);
+    const everything = await rows(`schoolId=${OAK}&metric=vacant&facet=all`);
+    const filledOnly = await rows(`schoolId=${OAK}&metric=vacant&facet=filled`);
+
+    // Regression guard: `all` used to keep the metric's own incumbent filter,
+    // which silently made "All positions" mean "vacancies".
+    expect(everything.total).toBeGreaterThan(vacantOnly.total);
+    expect(everything.total).toBe(vacantOnly.total + filledOnly.total);
+    expect(filledOnly.total).toBe(4);
+
+    // The tile's number is unaffected by the facet the user is browsing.
+    expect(everything.metricValue).toBe(4);
+    expect(vacantOnly.metricValue).toBe(4);
+  });
+
+  it('leaves a vacant facet on a people metric genuinely empty rather than wrong', async () => {
+    const list = await rows(`schoolId=${OAK}&metric=active-staff&facet=vacant`);
+    expect(list.total).toBe(0);
+    // …while the tile's number still reflects seated people.
+    expect(list.metricValue).toBe(4);
+  });
+
+  it('states the concrete predicate for the agreement footer', async () => {
+    const vacant = await rows(`schoolId=${OAK}&metric=vacant&facet=vacant`);
+    const all = await rows(`schoolId=${OAK}&metric=vacant&facet=all`);
+    const titled = await rows(`schoolId=${OAK}&metric=vacant&facet=vacant&posName=${encodeURIComponent('Teacher')}`);
+
+    expect(vacant.predicateSummary).toBe('open positions · incumbent = absent');
+    expect(all.predicateSummary).toBe('open positions');
+    expect(titled.predicateSummary).toBe('open positions · incumbent = absent · position title = "Teacher"');
+  });
+
+  // -- Composing facet + title + search + paging --------------------------
+
+  it('makes a breakdown bar open exactly the rows it counted', async () => {
+    const { breakdown } = await dashboard(OAK, 'all');
+    for (const bar of breakdown.bars) {
+      const list = await rows(`schoolId=${OAK}&metric=vacant&facet=all&posName=${encodeURIComponent(bar.posName)}`);
+      expect(list.total).toBe(bar.value);
+      expect(list.rows.every((row) => row.posName === bar.posName)).toBe(true);
+    }
+  });
+
+  it('offers Position Titles from the metric set so the filter never empties itself', async () => {
+    const all = await rows(`schoolId=${OAK}&metric=vacant&facet=all`);
+    const narrowed = await rows(`schoolId=${OAK}&metric=vacant&facet=all&posName=Teacher`);
+    expect(all.posNames).toEqual(['Assistant Principal', 'Counselor', 'Media Specialist', 'Teacher']);
+    expect(narrowed.posNames).toEqual(all.posNames);
+    expect(narrowed.total).toBeLessThan(all.total);
+  });
+
+  it('narrows with a case-insensitive search across the columns a user would type', async () => {
+    const all = await rows(`schoolId=${OAK}&metric=vacant&facet=all`);
+
+    // Position Title: three Teacher seats exist (1001 and 1006 filled, 1005 vacant).
+    const byTitle = await rows(`schoolId=${OAK}&metric=vacant&facet=all&q=teacher`);
+    expect(byTitle.total).toBe(3);
+    expect(byTitle.total).toBeLessThan(all.total);
+
+    // Employee number, and a miss returns nothing rather than everything.
+    const byNumber = await rows(`schoolId=${OAK}&metric=vacant&facet=all&q=900001`);
+    expect(byNumber.total).toBe(1);
+    expect(byNumber.rows[0].employeeNumber).toBe('900001');
+    expect((await rows(`schoolId=${OAK}&metric=vacant&facet=all&q=zzzz`)).total).toBe(0);
+
+    // Incumbent name search — only ever matches the filled side.
+    const filled = await rows(`schoolId=${OAK}&metric=filled&facet=filled&q=Whitfield`);
+    expect(filled.total).toBe(1);
+    expect(filled.rows[0].fullName).toBe('Whitfield, Dana');
+  });
+
+  it('paginates and clamps instead of over-reading', async () => {
+    const first = await rows(`schoolId=${OAK}&metric=vacant&facet=all&pageSize=3`);
+    expect(first.pageSize).toBe(3);
+    expect(first.pageCount).toBe(Math.ceil(first.total / 3));
+    expect(first.rows).toHaveLength(Math.min(3, first.total));
+    expect(first.rows.length).toBeLessThanOrEqual(KPI_PAGE_SIZE_MAX);
+
+    const second = await rows(`schoolId=${OAK}&metric=vacant&facet=all&pageSize=3&page=2`);
+    expect(second.page).toBe(2);
+    expect(second.rows.map((row) => row.posNumber)).not.toEqual(first.rows.map((row) => row.posNumber));
+
+    const beyond = await rows(`schoolId=${OAK}&metric=vacant&facet=all&pageSize=3&page=999`);
+    expect(beyond.page).toBe(beyond.pageCount);
+
+    const below = await rows(`schoolId=${OAK}&metric=vacant&facet=all&pageSize=3&page=1`);
+    expect(below.page).toBe(1);
+  });
+
+  it('caps the page size rather than trusting the client', async () => {
+    const response = await fetch(`${baseUrl}/api/schools/kpi/rows?schoolId=${OAK}&metric=vacant&pageSize=99999`);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'VALIDATION_ERROR' });
+  });
+
+  // -- Documentation (§11.11) --------------------------------------------
+
+  it('documents every metric in the catalog', async () => {
+    // The generated SQL carries its own `--` rationale above the statement, so
+    // normalize prose out before asserting it is genuinely a read-only SELECT.
+    const statement = (sql: string): string =>
+      sql
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--'))
+        .join('\n')
+        .trim();
+
+    for (const key of KPI_METRIC_KEYS) {
+      const definition = getKpiMetric(key);
+      expect(definition.definition.trim().length).toBeGreaterThan(0);
+      expect(definition.note.trim().length).toBeGreaterThan(0);
+      expect(definition.filters.length).toBeGreaterThan(0);
+      expect(definition.sourceTables.length).toBeGreaterThan(0);
+      expect(definition.sql.count.trim().length).toBeGreaterThan(0);
+      expect(definition.sql.rows.trim().length).toBeGreaterThan(0);
+
+      for (const sql of [definition.sql.count, definition.sql.rows]) {
+        const text = statement(sql);
+        expect({ key, starts: /^SELECT\b/i.test(text) }).toEqual({ key, starts: true });
+        // The SQL rendered on the definition page must be provably read-only.
+        expect({ key, write: /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REPLACE)\b/i.test(text) })
+          .toEqual({ key, write: false });
+        // …and must stay scoped to one organization.
+        expect({ key, scoped: text.includes(':organization') }).toEqual({ key, scoped: true });
+      }
+    }
+  });
+
+  it('serves the definition page for every key without touching school data', async () => {
+    for (const key of KPI_METRIC_KEYS) {
+      const { status, body } = await getJson<{ key: string; definition: string; filters: unknown[]; defaultFacet: KpiFacet }>(
+        `/api/schools/kpi/definition?metric=${key}`
+      );
+      expect(status).toBe(200);
+      expect(body.key).toBe(key);
+      expect(body.definition.length).toBeGreaterThan(0);
+      expect(body.filters.length).toBeGreaterThan(0);
+      // The definition carries the facet its list opens with, so the "Go to the
+      // list" button works for a metric that has no tile to read it from.
+      expect(body.defaultFacet).toBe(defaultFacetFor(getKpiMetric(key)));
+    }
+  });
+
+  it('publishes the catalog metadata so the client does not hard-code it', async () => {
+    const { status, body } = await getJson<{
+      windowDays: number;
+      barLimit: number;
+      tileOrder: KpiMetricKey[];
+      stripOrder: KpiMetricKey[];
+      keys: KpiMetricKey[];
+      metrics: Array<{ key: KpiMetricKey; label: string; defaultFacet: KpiFacet; unit: string; drillable: boolean }>;
+    }>('/api/schools/kpi/metrics');
+
+    expect(status).toBe(200);
+    expect(body.windowDays).toBe(EXPIRY_WINDOW_DAYS);
+    expect(body.barLimit).toBe(KPI_BAR_LIMIT);
+    expect(body.tileOrder).toEqual(KPI_TILE_ORDER);
+    expect(body.stripOrder).toEqual(KPI_STRIP_ORDER);
+    expect(body.keys.sort()).toEqual([...KPI_METRIC_KEYS].sort());
+    expect(body.metrics.map((entry) => entry.key)).toEqual([...KPI_METRIC_KEYS]);
+  });
+
+  it('gives every metric a display label so the switcher never shows a raw key', async () => {
+    const { body } = await getJson<{
+      tileOrder: KpiMetricKey[];
+      stripOrder: KpiMetricKey[];
+      metrics: Array<{ key: KpiMetricKey; label: string; defaultFacet: KpiFacet; drillable: boolean }>;
+    }>('/api/schools/kpi/metrics');
+
+    for (const entry of body.metrics) {
+      // No underscores and no lower-case slugs in the switcher.
+      expect(entry.label).not.toMatch(/[-_]/);
+      expect(entry.label).not.toBe(entry.key);
+      expect(entry.label.length).toBeGreaterThan(0);
+    }
+
+    // The labels the switcher shows, in catalog order.
+    expect(body.metrics.map((entry) => entry.label)).toEqual([
+      'Authorized',
+      'Filled',
+      'Vacant',
+      'Vacancy rate',
+      'Active staff',
+      'Expiring Certs',
+      'Expiring Contracts'
+    ]);
+
+    // `active-staff` has a list but deliberately no tile or strip slot, so the
+    // switcher reaches it while the dashboard does not.
+    const staff = body.metrics.find((entry) => entry.key === 'active-staff');
+    expect(staff?.drillable).toBe(true);
+    expect(body.tileOrder).not.toContain('active-staff');
+    expect(body.stripOrder).not.toContain('active-staff');
+
+    expect(body.metrics.find((entry) => entry.key === 'vacant')?.defaultFacet).toBe('vacant');
+  });
+
+  // -- Rejections ---------------------------------------------------------
+
+  it('rejects an unknown metric with a 400 that names the key', async () => {
+    for (const path of [
+      `/api/schools/kpi/rows?schoolId=${OAK}&metric=nope`,
+      '/api/schools/kpi/definition?metric=nope'
+    ]) {
+      const { status, body } = await getJson<{ error: string }>(path);
+      expect(status).toBe(400);
+      expect(body.error).toBe('UNKNOWN_KPI_METRIC:nope');
+    }
+  });
+
+  it('rejects an unknown facet and a missing school', async () => {
+    expect((await getJson(`/api/schools/kpi?schoolId=${OAK}&facet=sideways`)).status).toBe(400);
+    expect((await getJson('/api/schools/kpi?schoolId=does-not-exist')).status).toBe(404);
+    expect((await getJson('/api/schools/kpi')).status).toBe(400);
+  });
+
+  // -- Scoping (§11.5) ----------------------------------------------------
+
+  it('refuses a school the caller cannot see instead of returning someone else\u2019s data', async () => {
+    const scoped = { 'x-user-roles': 'school_staff', 'x-user-school-ids': OAK, 'x-user-view-all': '0' };
+
+    const own = await fetch(`${baseUrl}/api/schools/kpi?schoolId=${OAK}`, { headers: scoped });
+    expect(own.status).toBe(200);
+
+    const foreign = await fetch(`${baseUrl}/api/schools/kpi?schoolId=${RIVER}`, { headers: scoped });
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toEqual({ error: 'SCHOOL_NOT_PERMITTED' });
+
+    const foreignRows = await fetch(`${baseUrl}/api/schools/kpi/rows?schoolId=${RIVER}&metric=vacant`, {
+      headers: scoped
+    });
+    expect(foreignRows.status).toBe(403);
+
+    const unscoped = { 'x-user-roles': 'school_staff', 'x-user-school-ids': '', 'x-user-view-all': '1' };
+    expect((await fetch(`${baseUrl}/api/schools/kpi?schoolId=${RIVER}`, { headers: unscoped })).status).toBe(200);
+  });
+
+  // -- Guard rails (§11.6, §11.8, §11.9) ----------------------------------
+
+  it('never leaks a salary-shaped field in any payload', async () => {
+    const banned = /salary|hourly|pay_?rate|compensation|benefit/i;
+    const salaryKeys: string[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (node && typeof node === 'object') {
+        for (const [key, value] of Object.entries(node)) {
+          if (banned.test(key)) salaryKeys.push(key);
+          walk(value);
+        }
+      }
+    };
+
+    walk(await dashboard(OAK));
+    walk(await rows(`schoolId=${OAK}&metric=vacant&facet=all`));
+    walk(getKpiMetric('vacant'));
+
+    expect(salaryKeys).toEqual([]);
+  });
+
+  it('keeps the KPI code paths off the slow directory aggregate and out of dialogs', () => {
+    const kpiSources = [
+      'src/kpi-definitions.ts',
+      'src/repositories/mysql-kpi-repository.ts',
+      'client/src/KpiDashboardPage.tsx',
+      'client/src/KpiDrilldownPage.tsx',
+      'client/src/KpiDefinitionPage.tsx',
+      'client/src/KpiTile.tsx',
+      'client/src/KpiBarList.tsx'
+    ];
+
+    const present = kpiSources.filter((relative) => existsSync(join(process.cwd(), relative)));
+    // The server-side modules must exist; the client pages arrive in a later phase
+    // and this assertion grows into them automatically once they do.
+    expect(present).toEqual(expect.arrayContaining(['src/kpi-definitions.ts']));
+
+    for (const relative of present) {
+      const source = readFileSync(join(process.cwd(), relative), 'utf8');
+      // §11.8 — /api/directory is a ~17s district-wide aggregate; KPI views must
+      // never depend on it.
+      expect({ file: relative, hits: source.includes('/api/directory') }).toEqual({ file: relative, hits: false });
+      // §11.9 — no explanation is ever a dialog.
+      for (const primitive of ['alert(', 'window.confirm', 'window.prompt', 'role="dialog"', 'showModal']) {
+        expect({ file: relative, primitive, hits: source.includes(primitive) }).toEqual({ file: relative, primitive, hits: false });
+      }
+    }
   });
 });

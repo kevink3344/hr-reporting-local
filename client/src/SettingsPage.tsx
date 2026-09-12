@@ -1,10 +1,11 @@
 ﻿import { Fragment, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Archive, CheckCircle2, FileText, GripVertical, ListChecks, Pencil, Play, Plus, Settings2, Trash2, X } from 'lucide-react';
-import { createReport, createReportSection, getReports, getReportSections, runReport, updateReport, updateReportSection, validateReportSql } from './api';
+import { AlertCircle, Archive, CheckCircle2, FileText, Flag, Gauge, GripVertical, ListChecks, MessageSquare, Pencil, Play, Plus, Settings2, Trash2, X } from 'lucide-react';
+import { createReport, createReportSection, getReports, getReportSections, runReport, updateReport, updateReportSection, validateReportSql, getFeatureFlag, setFeatureFlag } from './api';
 import type { GenericReportRowWithSubreport, GenericSubreportRun, HighlightColorId, HighlightLogic, HighlightOperator, LoginSession, ReportDefinition, ReportHighlightRule, ReportHighlightCondition, ReportSection, School } from './types';
-import { describeHighlightRule, HIGHLIGHT_PALETTE, ruleMatchesRow } from './types';
+import { describeHighlightRule, HIGHLIGHT_PALETTE, isFeatureFlagKey, ruleMatchesRow } from './types';
+import type { FeatureFlagsResponse } from './types';
 
-type Tab = 'sections' | 'reports';
+type Tab = 'sections' | 'reports' | 'features';
 
 function errorMessage(failure: unknown, fallback: string): string {
   if (failure instanceof Error) {
@@ -251,8 +252,8 @@ function RowHighlightingEditor({
           </label>
           <button className="icon-button subtle highlight-delete" onClick={() => removeRule(index)} aria-label="Delete rule"><Trash2 size={14} /></button>
           <span className="highlight-move">
-            <button className="icon-button subtle" onClick={() => moveRule(index, index - 1)} disabled={index === 0} aria-label="Move up">â†‘</button>
-            <button className="icon-button subtle" onClick={() => moveRule(index, index + 1)} disabled={index === rules.length - 1} aria-label="Move down">â†“</button>
+            <button className="icon-button subtle" onClick={() => moveRule(index, index - 1)} disabled={index === 0} aria-label="Move up">↑</button>
+            <button className="icon-button subtle" onClick={() => moveRule(index, index + 1)} disabled={index === rules.length - 1} aria-label="Move down">↓</button>
           </span>
         </div>
         <ConditionRows
@@ -265,7 +266,7 @@ function RowHighlightingEditor({
     })}
     <div className="highlight-actions">
       <button className="back-button" onClick={addRule} disabled={rules.length >= 10}><Plus size={15} />Add rule</button>
-      <span className="highlight-hint">First matching rule wins. Drag â‹®â‹® to reorder priority. Max 10 rules, max 5 conditions each.</span>
+      <span className="highlight-hint">First matching rule wins. Drag ⋮⋮ to reorder priority. Max 10 rules, max 5 conditions each.</span>
     </div>
   </div>;
 }
@@ -528,7 +529,7 @@ function ReportsTab({ session, schools, sections, reports, refresh }: { session:
           </>}
         </div>
         {preview && <div className="settings-preview">
-          <p><strong>Preview</strong> â€” first {preview.rows.length} of {preview.columns.length} columns{preview.subreport ? ' Â· with subreport' : ''}</p>
+          <p><strong>Preview</strong> — first {preview.rows.length} of {preview.columns.length} columns{preview.subreport ? ' · with subreport' : ''}</p>
           <div className="report-table-wrap"><table className="report-table">
             <thead><tr>{preview.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
             <tbody>{preview.rows.map((row, index) => {
@@ -553,7 +554,7 @@ function ReportsTab({ session, schools, sections, reports, refresh }: { session:
             columns={preview?.columns ?? []}
           />
           {preview && (editing.highlightRules ?? []).length > 0 && <div className="settings-preview" style={{ marginTop: 12 }}>
-            <p><strong>Preview</strong> â€” tinted rows</p>
+            <p><strong>Preview</strong> — tinted rows</p>
             <div className="report-table-wrap"><table className="report-table">
               <thead><tr>{preview.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
               <tbody>{preview.rows.map((row, index) => {
@@ -615,8 +616,142 @@ function ReportsTab({ session, schools, sections, reports, refresh }: { session:
   </div>;
 }
 
+function FeaturesTab({ session, onFlagsChanged }: { session: LoginSession; onFlagsChanged?: (flags: Partial<FeatureFlagsResponse>) => void }) {
+  const [futureEnabled, setFutureEnabled] = useState(false);
+  const [autoLookupEnabled, setAutoLookupEnabled] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  // Defaults ON: the dashboard is already live (server default is opt-out).
+  const [kpiEnabled, setKpiEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
 
-export function SettingsPage({ session, schools }: { session: LoginSession; schools: School[] }) {
+  useEffect(() => {
+    setLoading(true);
+    getFeatureFlag(session)
+      .then((flags) => {
+        setFutureEnabled(flags.future_positions);
+        setAutoLookupEnabled(flags.employee_auto_lookup);
+        setAiEnabled(flags.ai_assistant);
+        setKpiEnabled(flags.kpi_dashboard);
+      })
+      .catch(() => setError('The feature flags could not be loaded.'))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.user.id]);
+
+  // One toggle for every flag. The shell renders nav items and whole views from
+  // this same state, so a successful change is handed straight to it rather than
+  // waiting for the next page load.
+  async function toggleFlag(key: string, next: boolean, setState: (value: boolean) => void, label: string) {
+    setNotice('');
+    setError('');
+    setSaving(true);
+    try {
+      const flag = await setFeatureFlag(session, key, next);
+      setState(flag.enabled);
+      if (isFeatureFlagKey(key)) {
+        const patch: Partial<FeatureFlagsResponse> = {};
+        patch[key] = flag.enabled;
+        onFlagsChanged?.(patch);
+      }
+      setNotice(`${label} is now ${flag.enabled ? 'enabled' : 'disabled'}.`);
+    } catch (failure) {
+      setError(errorMessage(failure, 'The feature flag could not be updated.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="settings-panel"><div className="empty-state"><span className="loader" />Loading</div></div>;
+
+  return <div className="settings-panel">
+    {notice && <p className="settings-notice">{notice}</p>}
+    {error && <p className="settings-error">{error}</p>}
+
+    <div className="settings-section">
+      <h3 className="settings-section-title"><Gauge size={16} />KPI Dashboard</h3>
+      <p className="settings-section-desc">When enabled, a <strong>KPI Dashboard</strong> page appears in the navigation. Every tile and bar on it is clickable, opening the exact list behind the number along with its definition and read-only SQL. When disabled, the menu link is removed.</p>
+      <label className="toggle-row">
+        <span className="toggle-row-label">Enable KPI Dashboard</span>
+        <span className="toggle-label">{kpiEnabled ? 'On' : 'Off'}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={kpiEnabled}
+          className={kpiEnabled ? 'switch switch-on' : 'switch'}
+          disabled={saving}
+          onClick={() => void toggleFlag('kpi_dashboard', !kpiEnabled, setKpiEnabled, 'KPI Dashboard')}
+        >
+          <span className="switch-knob" />
+        </button>
+      </label>
+    </div>
+
+    <div className="settings-section">
+      <h3 className="settings-section-title"><Flag size={16} />Future Positions (Beta)</h3>
+      <p className="settings-section-desc">When enabled, staff can stage a new incumbent directly from a position's detail page. The record stays <strong>pending</strong> until it is sent for review, then the data team reviews it and marks it <strong>completed</strong>.</p>
+      <label className="toggle-row">
+        <span className="toggle-row-label">Enable Future Positions</span>
+        <span className="toggle-label">{futureEnabled ? 'On' : 'Off'}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={futureEnabled}
+          className={futureEnabled ? 'switch switch-on' : 'switch'}
+          disabled={saving}
+          onClick={() => void toggleFlag('future_positions', !futureEnabled, setFutureEnabled, 'Future Positions')}
+        >
+          <span className="switch-knob" />
+        </button>
+      </label>
+
+      {/* Nested sub-feature: only meaningful when Future Positions is on, so it
+          is disabled (and greyed) until the parent toggle is enabled. */}
+      <label className={futureEnabled ? 'toggle-row toggle-row-nested' : 'toggle-row toggle-row-nested toggle-row-disabled'}>
+        <span className="toggle-row-label">
+          Enable Auto-Lookup
+          <span className="toggle-row-hint">Fills the incumbent name and account number automatically once a 6-digit employee number is entered.</span>
+        </span>
+        <span className="toggle-label">{autoLookupEnabled ? 'On' : 'Off'}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={autoLookupEnabled}
+          aria-disabled={!futureEnabled}
+          className={autoLookupEnabled ? 'switch switch-on' : 'switch'}
+          disabled={saving || !futureEnabled}
+          onClick={() => void toggleFlag('employee_auto_lookup', !autoLookupEnabled, setAutoLookupEnabled, 'Employee auto-lookup')}
+        >
+          <span className="switch-knob" />
+        </button>
+      </label>
+      {!futureEnabled && <p className="settings-hint">Turn on Future Positions to configure auto-lookup.</p>}
+    </div>
+
+    <div className="settings-section">
+      <h3 className="settings-section-title"><MessageSquare size={16} />AI Assistant (Beta)</h3>
+      <p className="settings-section-desc">When enabled, a natural-language assistant can answer questions about the data — for example <em>“Which schools have the most open positions?”</em> It generates read-only, school-scoped SQL behind the scenes and shows a history of recent searches.</p>
+      <label className="toggle-row">
+        <span className="toggle-row-label">Enable AI Assistant</span>
+        <span className="toggle-label">{aiEnabled ? 'On' : 'Off'}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={aiEnabled}
+          className={aiEnabled ? 'switch switch-on' : 'switch'}
+          disabled={saving}
+          onClick={() => void toggleFlag('ai_assistant', !aiEnabled, setAiEnabled, 'AI Assistant')}
+        >
+          <span className="switch-knob" />
+        </button>
+      </label>
+    </div>
+  </div>;
+}
+
+export function SettingsPage({ session, schools, onFlagsChanged }: { session: LoginSession; schools: School[]; onFlagsChanged?: (flags: Partial<FeatureFlagsResponse>) => void }) {
   const [tab, setTab] = useState<Tab>('reports');
   const [sections, setSections] = useState<ReportSection[]>([]);
   const [reports, setReports] = useState<ReportDefinition[]>([]);
@@ -652,9 +787,12 @@ export function SettingsPage({ session, schools }: { session: LoginSession; scho
     <div className="settings-tabs" role="tablist">
       <button role="tab" aria-selected={tab === 'reports'} className={tab === 'reports' ? 'settings-tab active' : 'settings-tab'} onClick={() => setTab('reports')}>Reports ({reports.length})</button>
       <button role="tab" aria-selected={tab === 'sections'} className={tab === 'sections' ? 'settings-tab active' : 'settings-tab'} onClick={() => setTab('sections')}>Sections ({sections.length})</button>
+      {isAdmin && <button role="tab" aria-selected={tab === 'features'} className={tab === 'features' ? 'settings-tab active' : 'settings-tab'} onClick={() => setTab('features')}>Features</button>}
     </div>
     {tab === 'sections'
       ? <SectionsTab session={session} sections={sections} refresh={refresh} />
-      : <ReportsTab session={session} schools={schools} sections={sections} reports={reports} refresh={refresh} />}
+      : tab === 'features' && isAdmin
+        ? <FeaturesTab session={session} onFlagsChanged={onFlagsChanged} />
+        : <ReportsTab session={session} schools={schools} sections={sections} reports={reports} refresh={refresh} />}
   </section>;
 }

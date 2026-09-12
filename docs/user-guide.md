@@ -66,14 +66,24 @@ Settings drawer.
    - **Home** — the people directory.
    - **Reports** — the report catalog.
    - **Positions** — your pinned positions (a badge shows the count).
+   - **KPI Dashboard** — per-school staffing metrics where every tile and bar opens
+     the list of records behind the number. *An admin can turn this page off; if it
+     has been turned off, the dashboard does not appear here.*
    - **Report Configuration** — admin settings (visible only to admins).
+   - **Features** — admin page for turning optional features on or off (visible only
+     to admins). Changes apply to everyone: your own session updates straight away,
+     so you can see the menu link appear or disappear as you flip the switch, and
+     everyone else picks up the change when they next load the app. If you turn off
+     a feature, anything that already relies on it is closed down rather than left
+     open and failing.
 2. **Topbar (right):** Your welcome block, the **Settings** gear, the
    **dark/light theme** toggle, and **Sign out**.
 3. **Announcement banners:** If an admin has posted an active banner, a strip
    appears just under the topbar. Click the **✕** on the banner to dismiss it.
 
-**Expected result:** You can switch between Home, Reports, and Positions from
-the sidebar and reach your personal and admin settings from the topbar gear.
+**Expected result:** You can switch between Home, Reports, Positions, and — unless
+an admin has disabled it — the KPI Dashboard from the sidebar, and reach your
+personal and admin settings from the topbar gear.
 
 ---
 
@@ -417,12 +427,12 @@ re-surface after an edit even if they were previously dismissed.
 **Goal:** Choose where you land after signing in.
 
 1. Click the **gear** icon in the topbar → the **Settings** drawer opens.
-2. Under **Default home page**, choose **Home**, **Reports**, or **Positions**.
+2. Under **Default home page**, choose **Home**, **Reports**, or **Dashboard**.
 
 **Expected result:** Your next sign-in lands on the page you selected. This is
 saved per user.
 
-![The Settings drawer showing the Default home page picker with Home, Reports, and Positions options.](./screenshots/settings-preferences.png)
+![The Settings drawer showing the Default home page picker with Home, Reports, and Dashboard options.](./screenshots/settings-preferences.png)
 
 ### 7.2 Toggle dark mode
 

@@ -82,7 +82,7 @@ async function executeSubreportColumns(sql: string): Promise<string[]> {
 }
 import { REPORT_ROW_CAP, bindNamedParam, bindOrganization, newId, nowIso, validateReportSql, validateSubreportSql } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
-
+import { fixtureRepositories } from './fixture-repository.js';
 // Legacy open_pos_read.inc, adapted to SQLite/Turso:
 //   * CONCAT(...) -> COALESCE(...) || '...' (NULL segments become '')
 //   * NOW() -> date('now')
@@ -584,6 +584,12 @@ export const tursoRepositories: Repositories = {
     }
   },
   reports: { openPositions },
+  // Delegated to the fixture on purpose. The Turso replica carries synthetic
+  // seed rows and `cert_info` windows are not mirrored there; writing a third
+  // SQL dialect of the KPI predicates would be a second source of truth for
+  // the metrics. The fixture runs the SAME pure builders as MySQL, so the
+  // contract is satisfied without duplicating the metric definitions.
+  schoolKpi: fixtureRepositories.schoolKpi,
   positions: { getPositionDetails, search: searchPositions },
   reportSections: {
     async list(includeInactive = false) {

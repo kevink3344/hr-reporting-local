@@ -445,3 +445,184 @@ export type FuturePosition = {
   createdAt: string;
   updatedAt: string;
 };
+
+// ---------------------------------------------------------------------------
+// KPI dashboard (clickable tiles + drill-down list + definition page)
+//
+// The whole feature rests on ONE idea: every tile, every bar and every list is
+// derived from the same normalized `KpiPositionRow[]` array by the same pure
+// predicate. A tile can therefore never disagree with the list it opens.
+// See src/kpi-definitions.ts for the catalog and the predicate evaluator.
+// ---------------------------------------------------------------------------
+
+export type KpiMetricKey =
+  | 'filled'
+  | 'vacant'
+  | 'authorized'
+  | 'active-staff'
+  | 'expiring-certs'
+  | 'expiring-contracts'
+  | 'vacancy-rate';
+
+/** What a metric counts. `positions` = open seats, `people` = distinct people. */
+export type KpiUnit = 'positions' | 'people';
+
+/** The status facet offered on the dashboard and the drill-down list. */
+export type KpiFacet = 'all' | 'filled' | 'vacant';
+
+/**
+ * The machine-readable half of a metric. Everything a metric means is captured
+ * here, so a tile, a bar, a list and a documentation page can all be produced
+ * from this one object instead of from hand-maintained prose.
+ */
+export type KpiPredicate = {
+  /** Which grain to start from. `active_assignments` implies an incumbent. */
+  base: 'open_positions' | 'active_assignments';
+  /** Whether the seat must have an incumbent, must not, or either. */
+  incumbent: 'any' | 'present' | 'absent';
+  /** Restrict to one Position Title (set when a breakdown bar is clicked). */
+  posName?: string;
+  /** Keep people whose earliest future certificate expires within N days. */
+  certExpiresWithinDays?: number;
+  /** Keep people whose contract ends within N days. */
+  contractEndsWithinDays?: number;
+};
+
+/** One row of the "Filters applied" table on the definition page. */
+export type KpiFilterDoc = { column: string; test: string };
+
+/** One normalized open position, with its incumbent and expiry signals. */
+export type KpiPositionRow = {
+  posNumber: string;
+  /** Position Title — the breakdown axis and the drill-down's primary label. */
+  posName: string;
+  organization: string;
+  accountNumber: string;
+  monthsAvailable: number | null;
+  monthsUsed: number | null;
+  /** True when the seat has an incumbent. THE Filled/Vacant facet. */
+  occupied: boolean;
+  fullName: string;
+  employeeNumber: string;
+  personId: string;
+  classroom: string;
+  mailstop: string;
+  tenureCode: string;
+  contractId: string;
+  /** `YYYY-MM-DD` or ''. */
+  contractEnd: string;
+  /** Earliest certificate expiry not already in the past — `YYYY-MM-DD` or ''. */
+  certNextExpiration: string;
+  posStart: string;
+  posEnding: string;
+  tap: string;
+  degree: string;
+};
+
+/** A metric as documented — the single source of truth for the feature. */
+export type KpiMetricDefinition = {
+  key: KpiMetricKey;
+  label: string;
+  unit: KpiUnit;
+  /** `count` counts matches; `share` derives a percentage of a base metric. */
+  aggregate: 'count' | 'share';
+  /** Base metric a `share` aggregate divides by. */
+  shareOf?: KpiMetricKey;
+  predicate: KpiPredicate;
+  /** One sentence: what this number means. Never empty (enforced by test). */
+  definition: string;
+  /** What inflates or deflates the number. Never empty (enforced by test). */
+  note: string;
+  /** At least one entry (enforced by test) — rendered as a table. */
+  filters: KpiFilterDoc[];
+  sourceTables: string[];
+  /** Static, read-only SQL shown on the definition page. */
+  sql: { count: string; rows: string };
+  /** Where the tile sends you. `null` = not clickable. */
+  drilldown: KpiMetricKey | null;
+  /**
+   * The facet this metric's list opens with — sent alongside the definition so
+   * a caller can jump straight to the right list without a dashboard payload.
+   */
+  defaultFacet?: KpiFacet;
+};
+
+/** A metric instance with its value, ready to render as a tile. */
+export type KpiMetricValue = {
+  key: KpiMetricKey;
+  label: string;
+  unit: KpiUnit;
+  value: number;
+  /** Pre-formatted for display: `'233'` or `'26.2%'`. */
+  displayValue: string;
+  definition: string;
+  note: string;
+  drilldown: KpiMetricKey | null;
+  drillable: boolean;
+  /**
+   * The facet the drill-down opens with, derived from the metric by the server
+   * so the client never has to guess that "Vacant" implies `facet=vacant`.
+   */
+  defaultFacet: KpiFacet;
+};
+
+/** One bar in the breakdown chart. Clicking it filters the list to `posName`. */
+export type KpiBar = { label: string; posName: string; value: number };
+
+export type KpiBreakdown = {
+  axis: 'pos_name';
+  title: string;
+  bars: KpiBar[];
+  /** Number of distinct Position Titles before truncation. */
+  titleCount: number;
+  truncated: boolean;
+  limit: number;
+};
+
+/** `GET /api/schools/kpi` — everything the dashboard page needs in one call. */
+export type SchoolKpiPayload = {
+  school: string;
+  asOf: string;
+  windowDays: number;
+  /** The facet this payload was built for, echoed so the control stays in sync. */
+  facet: KpiFacet;
+  /** The four clickable tiles, in display order. */
+  tiles: KpiMetricValue[];
+  /** Authorized + vacancy rate: the headline strip above the tiles. */
+  strip: KpiMetricValue[];
+  breakdown: KpiBreakdown;
+};
+
+/** Drill-down request. `metric` picks the predicate; the rest narrow the list. */
+export type SchoolKpiRowQuery = {
+  metric: KpiMetricKey;
+  facet?: KpiFacet;
+  posName?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+/** `GET /api/schools/kpi/rows` — a page of the drill-down list. */
+export type SchoolKpiRows = {
+  metric: KpiMetricKey;
+  label: string;
+  unit: KpiUnit;
+  facet: KpiFacet;
+  posName: string;
+  query: string;
+  /** The tile's number: rows matching the metric, ignoring facet/search/title. */
+  metricValue: number;
+  /** Rows after every filter — the page count is derived from this. */
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  /** Row count for each facet, so the segmented control can show counts. */
+  facetCounts: Record<KpiFacet, number>;
+  /** Human-readable restatement of the predicate — backs the agreement footer. */
+  predicateSummary: string;
+  /** Distinct Position Titles present in the *unfiltered* metric set. */
+  posNames: string[];
+  rows: KpiPositionRow[];
+};

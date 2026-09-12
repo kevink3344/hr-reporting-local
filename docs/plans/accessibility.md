@@ -294,8 +294,23 @@ Mirror the `feature-flags` error shape (`FEATURE_NOT_FOUND` → here `PALETTE_NO
 `repoErrorToStatus` mapping. **`palette.default` must be validated to be a member of `enabled`** and
 `default` must never be removable.
 
-> **Toggle latency note:** feature flags are loaded once at sign-in, so changing a flag does not
-> retro-apply without reload/re-login (documented existing behavior). Palettes must **not** inherit that
+> **Toggle latency note:** a feature flag now takes effect immediately in the session that changed it.
+> Both admin surfaces (`FeaturesPage`, and the legacy Settings → Features tab) hand a successful toggle
+> to the app shell through an `onFlagsChanged` prop, and the shell applies it to the state its nav items
+> and views read from. Other sessions still hold the value they loaded at sign-in and pick the change up
+> on their next load — there is no polling or cross-tab sync.
+>
+> Two cases are worth calling out because they are not simple nav visibility:
+> - **Flags that gate server routes** (Future Positions, AI Assistant, Style Configuration) also have
+>   to close the affected view. Hiding the nav item is not enough: a user sitting on a page whose
+>   endpoints now return `403 FEATURE_DISABLED` is left at a dead end. The shell watches all four
+>   flags and redirects those views to Home.
+> - **The KPI Dashboard bounce is load-bearing, not defensive.** `HomePage` is
+>   `'home' | 'reports' | 'kpi'`, so a user whose saved home page is **Dashboard** is placed on the KPI
+>   view at login. If the flag is off, the bounce is what stops them landing on a dashboard with no nav
+>   item to leave by.
+>
+> Palettes must **not** inherit the latency
 > — switching should apply instantly, since it is a visual preference. This means the palette must be
 > applied to `document.documentElement` on change, not only at bootstrap.
 

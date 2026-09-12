@@ -170,3 +170,22 @@ export async function exportGenericReportToCsv(run: {
   const slug = run.report.title.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-') || 'report';
   blobDownload('\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8;', `${slug}-${sanitizeFilename(run.organization)}.csv`);
 }
+
+/**
+ * Export a flat table of already-labelled rows to CSV. Used by the KPI
+ * drill-down, where the columns are the visible table columns rather than a
+ * report definition's column list.
+ */
+export function exportTableToCsv(run: {
+  title: string;
+  organization: string;
+  columns: string[];
+  rows: (string | number | null | undefined)[][];
+}): void {
+  const lines: string[] = [run.columns.map(csvEscape).join(',')];
+  for (const row of run.rows) {
+    lines.push(run.columns.map((_column, index) => csvEscape(row[index])).join(','));
+  }
+  const slug = run.title.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-') || 'table';
+  blobDownload('\uFEFF' + lines.join('\r\n'), 'text/csv;charset=utf-8;', `${slug}-${sanitizeFilename(run.organization)}.csv`);
+}

@@ -29,6 +29,12 @@ import type {
   HealthStatus,
   StyleTheme,
   StyleThemeInput,
+  KpiCatalog,
+  KpiFacet,
+  KpiMetricDefinition,
+  KpiMetricKey,
+  SchoolKpiPayload,
+  SchoolKpiRows,
 } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -115,6 +121,54 @@ export function getPersonRecord(personId: string): Promise<PersonRecord> {
 export function getPositionDetails(organization: string, posNumber: string): Promise<PositionDetails> {
   const query = new URLSearchParams({ organization });
   return request<PositionDetails>(`/api/positions/${encodeURIComponent(posNumber)}?${query.toString()}`);
+}
+
+// ---- Clickable KPI dashboard ----
+// `schoolId` is a school *id* (e.g. '0318'), not the display name — the server
+// resolves it to the organization string, so the client never has to know how
+// the two are related. These are scoped reads, so they use `scopeHeaders`: a
+// user restricted to certain schools gets 403 SCHOOL_NOT_PERMITTED for any
+// other school rather than another school's data.
+
+export function getSchoolKpi(
+  session: LoginSession | null | undefined,
+  schoolId: string,
+  facet?: KpiFacet
+): Promise<SchoolKpiPayload> {
+  const params = new URLSearchParams({ schoolId });
+  if (facet) params.set('facet', facet);
+  return request<SchoolKpiPayload>(`/api/schools/kpi?${params.toString()}`, { headers: scopeHeaders(session) });
+}
+
+export function getSchoolKpiRows(
+  session: LoginSession | null | undefined,
+  query: {
+    schoolId: string;
+    metric: KpiMetricKey;
+    facet?: KpiFacet;
+    posName?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }
+): Promise<SchoolKpiRows> {
+  const params = new URLSearchParams({ schoolId: query.schoolId, metric: query.metric });
+  if (query.facet) params.set('facet', query.facet);
+  if (query.posName) params.set('posName', query.posName);
+  if (query.q) params.set('q', query.q);
+  if (query.page) params.set('page', String(query.page));
+  if (query.pageSize) params.set('pageSize', String(query.pageSize));
+  return request<SchoolKpiRows>(`/api/schools/kpi/rows?${params.toString()}`, { headers: scopeHeaders(session) });
+}
+
+/** The catalog entry (prose, filters, source tables, read-only SQL) for one metric. */
+export function getKpiDefinition(metric: KpiMetricKey): Promise<KpiMetricDefinition> {
+  return request<KpiMetricDefinition>(`/api/schools/kpi/definition?metric=${encodeURIComponent(metric)}`);
+}
+
+/** Tile/strip order, window days and bar limit, so the UI never hard-codes them. */
+export function getKpiCatalog(): Promise<KpiCatalog> {
+  return request<KpiCatalog>('/api/schools/kpi/metrics');
 }
 
 // ---- Configurable reports (Settings page) ----

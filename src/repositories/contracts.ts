@@ -3,6 +3,7 @@ import type {
   FuturePosition,
   FuturePositionStatus,
   GenericReportRun,
+  KpiFacet,
   OpenPositionRow,
   Person,
   PositionComment,
@@ -19,6 +20,9 @@ import type {
   ReportViewInviteStatus,
   ReportViewVisibility,
   School,
+  SchoolKpiPayload,
+  SchoolKpiRowQuery,
+  SchoolKpiRows,
   SystemMessage,
   SystemMessageType,
   SystemUser,
@@ -45,6 +49,24 @@ export interface PersonRecordsRepository {
 
 export interface ReportsRepository {
   openPositions(organization: string): Promise<OpenPositionRow[]>;
+}
+
+/**
+ * The clickable KPI dashboard.
+ *
+ * Both methods build on the same normalized `KpiPositionRow[]` and the same
+ * predicate functions in `src/kpi-definitions.ts`, so the number a tile shows
+ * is always the length of the list it opens. Implementations differ only in how
+ * they load the rows.
+ */
+export interface SchoolKpiRepository {
+  /**
+   * Every tile, the headline strip and the Position Title breakdown. `facet`
+   * scopes the breakdown (and only the breakdown) to All / Filled / Vacant.
+   */
+  getSchoolKpi(organization: string, facet?: KpiFacet): Promise<SchoolKpiPayload>;
+  /** One filtered, paginated page of the drill-down list. */
+  getSchoolKpiRows(organization: string, query: SchoolKpiRowQuery): Promise<SchoolKpiRows>;
 }
 
 export interface PositionsRepository {
@@ -461,6 +483,7 @@ export type Repositories = {
   personRecords: PersonRecordsRepository;
   reports: ReportsRepository;
   positions: PositionsRepository;
+  schoolKpi: SchoolKpiRepository;
   reportSections: ReportSectionsRepository;
   reportDefinitions: ReportDefinitionsRepository;
   reportViews: ReportViewsRepository;

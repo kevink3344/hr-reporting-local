@@ -16,7 +16,7 @@ import {
 const HOME_PAGE_OPTIONS: { value: HomePage; label: string }[] = [
   { value: 'home', label: 'Home' },
   { value: 'reports', label: 'Reports' },
-  { value: 'positions', label: 'Positions' },
+  { value: 'kpi', label: 'Dashboard' },
 ];
 
 // Maximum simultaneous active banners. Enforced client-side (and the server
