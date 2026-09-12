@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, Download, Info, Search } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Check, ChevronDown, Download, Info, Search } from 'lucide-react';
 import { getSchoolKpiRows } from './api';
-import { exportTableToCsv } from './reportExport';
+import { CsvIcon, ExcelIcon, PdfIcon } from './ExportFormatIcons';
+import { exportGenericReport, exportGenericReportToCsv } from './reportExport';
+import { exportGenericReportToPdf } from './reportPdf';
 import { radioGroupKeys } from './radioGroupKeys';
 import type { KpiFacet, KpiMetricKey, KpiPositionRow, KpiTarget, LoginSession, SchoolKpiRows } from './types';
 
@@ -9,7 +11,23 @@ const FACET_ORDER: KpiFacet[] = ['all', 'filled', 'vacant'];
 const FACET_LABEL: Record<KpiFacet, string> = { all: 'All', filled: 'Filled', vacant: 'Vacant' };
 const PAGE_SIZE = 25;
 
-const CSV_COLUMNS = ['Position #', 'Position Title', 'Category', 'Account', 'Months used', 'Months available', 'Incumbent', 'Employee #', 'Contract end', 'Certificate expires', 'Status'];
+/** The exported column order, shared by all three formats. */
+const EXPORT_COLUMNS = ['Position #', 'Position Title', 'Category', 'Account', 'Months used', 'Months available', 'Incumbent', 'Employee #', 'Contract end', 'Certificate expires', 'Status'];
+
+type ExportFormat = 'excel' | 'csv' | 'pdf';
+
+/** Same three formats, in the same order, as the Report Dashboard's export control. */
+const EXPORT_FORMATS: Array<{ value: ExportFormat; label: string; extension: string }> = [
+  { value: 'excel', label: 'Excel', extension: '.xlsx' },
+  { value: 'csv', label: 'CSV', extension: '.csv' },
+  { value: 'pdf', label: 'PDF', extension: '.pdf' }
+];
+
+function ExportFormatIcon({ format, size }: { format: ExportFormat; size: number }) {
+  if (format === 'excel') return <ExcelIcon size={size} />;
+  if (format === 'csv') return <CsvIcon size={size} />;
+  return <PdfIcon size={size} />;
+}
 
 type KpiDrilldownPageProps = {
   session: LoginSession | null;
@@ -20,20 +38,27 @@ type KpiDrilldownPageProps = {
   onOpenRecord: (employeeNumber: string) => void;
 };
 
-function csvRow(row: KpiPositionRow): (string | number)[] {
-  return [
-    row.posNumber,
-    row.posName,
-    row.posName,
-    row.accountNumber,
-    row.monthsUsed ?? '',
-    row.monthsAvailable ?? '',
-    row.occupied ? row.fullName : '',
-    row.employeeNumber,
-    row.contractEnd,
-    row.certNextExpiration,
-    row.occupied ? 'Filled' : 'Vacant'
-  ];
+/**
+ * One export row, keyed by the labels in EXPORT_COLUMNS. Keyed rather than
+ * positional so the same rows feed all three shared report exporters, which
+ * each expect a record per row.
+ */
+function exportRecord(row: KpiPositionRow): Record<string, unknown> {
+  return {
+    'Position #': row.posNumber,
+    'Position Title': row.posName,
+    // The dashboard's axis is Position Title, so Category repeats it; there is
+    // no independent category value to export (see the plan doc, 3.1.1).
+    'Category': row.posName,
+    'Account': row.accountNumber,
+    'Months used': row.monthsUsed ?? '',
+    'Months available': row.monthsAvailable ?? '',
+    'Incumbent': row.occupied ? row.fullName : '',
+    'Employee #': row.employeeNumber,
+    'Contract end': row.contractEnd,
+    'Certificate expires': row.certNextExpiration,
+    'Status': row.occupied ? 'Filled' : 'Vacant'
+  };
 }
 
 /** Windowed page numbers so a 40-page list does not render 40 buttons. */
@@ -58,6 +83,9 @@ export function KpiDrilldownPage({ session, target, onBack, onDefine, onOpenPosi
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [exportOpen, setExportOpen] = useState(false);
+  // CSV stays the default so a plain click on Export behaves as it did before.
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
 
   // A new target (different metric, bar, or school) restarts the view.
   useEffect(() => {
@@ -142,13 +170,21 @@ export function KpiDrilldownPage({ session, target, onBack, onDefine, onOpenPosi
   }
 
   function handleExport() {
-    if (!data) return;
-    exportTableToCsv({
-      title: `${label}${target.posName ? ` ${target.posName}` : ''}`,
+    if (!data || data.rows.length === 0) return;
+    // One shape, three destinations: the same rows and column order feed the
+    // shared CSV, Excel, and PDF exporters the Report Dashboard uses.
+    const exportRun = {
+      report: {
+        title: `${label}${target.posName ? ` ${target.posName}` : ''}`,
+        sectionTitle: 'KPI drill-down'
+      },
       organization: target.schoolName,
-      columns: CSV_COLUMNS,
-      rows: data.rows.map(csvRow)
-    });
+      columns: EXPORT_COLUMNS,
+      rows: data.rows.map(exportRecord)
+    };
+    if (exportFormat === 'excel') void exportGenericReport(exportRun);
+    else if (exportFormat === 'csv') void exportGenericReportToCsv(exportRun);
+    else void exportGenericReportToPdf(exportRun);
   }
 
   const pageNumbers = useMemo(() => pageWindow(page, pageCount), [page, pageCount]);
@@ -188,9 +224,61 @@ export function KpiDrilldownPage({ session, target, onBack, onDefine, onOpenPosi
           <button type="button" className="kpi-btn ghost" onClick={() => onDefine(target.metric)} aria-label={`How ${label} is calculated. Opens the definition page.`}>
             <Info size={14} aria-hidden /> How &ldquo;{label}&rdquo; is calculated
           </button>
-          <button type="button" className="kpi-btn" onClick={handleExport} disabled={exportsDisabled} aria-label="Export this list as CSV">
-            <Download size={14} aria-hidden /> Export CSV
-          </button>
+          <div className="export-controls">
+            <div className="export-format-dropdown">
+              <button
+                type="button"
+                className="export-button export-button--secondary"
+                onClick={() => setExportOpen((open) => !open)}
+                disabled={exportsDisabled}
+                aria-expanded={exportOpen}
+                aria-haspopup="listbox"
+                aria-label={`Export format: ${exportFormat}`}
+                title="Select export format"
+              >
+                <ExportFormatIcon format={exportFormat} size={18} />
+                <span>Select format</span>
+                <ChevronDown size={14} className={exportOpen ? 'chevron-open' : ''} aria-hidden />
+              </button>
+              {exportOpen && (
+                <div className="export-format-menu" role="listbox" aria-label="Export format">
+                  {EXPORT_FORMATS.map((format) => (
+                    <button
+                      key={format.value}
+                      type="button"
+                      role="option"
+                      aria-selected={exportFormat === format.value}
+                      className={`export-format-option${exportFormat === format.value ? ' active' : ''}`}
+                      onClick={() => {
+                        setExportFormat(format.value);
+                        setExportOpen(false);
+                      }}
+                    >
+                      <span className="export-format-option-icon">
+                        <ExportFormatIcon format={format.value} size={16} />
+                      </span>
+                      <span className="export-format-option-label">
+                        {format.label}
+                        <br />
+                        <small>{format.extension}</small>
+                      </span>
+                      {exportFormat === format.value && <Check size={14} aria-hidden />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className="export-button"
+              onClick={handleExport}
+              disabled={exportsDisabled}
+              aria-label={`Export this list to ${exportFormat.toUpperCase()}`}
+              title={`Export this list to ${exportFormat.toUpperCase()}`}
+            >
+              <Download size={15} aria-hidden /> Export
+            </button>
+          </div>
         </div>
       </header>
 

@@ -94,6 +94,38 @@
   .btn.ghost { background: #fff; color: var(--navy); }
   .btn.ghost:hover { background: #f2f7fb; }
 
+  /* ---------- export format control (mirrors .export-* in the app) ---------- */
+  .export-controls { display: inline-flex; align-items: center; gap: 8px; }
+  .export-format-dropdown { position: relative; }
+  .export-button {
+    font-family: var(--font-main); font-size: 12.5px; font-weight: 700;
+    height: 37px; padding: 0 14px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid var(--navy); border-radius: var(--style-radius);
+    background: var(--navy); color: #fff;
+  }
+  .export-button:hover { background: var(--navy-dark); border-color: var(--navy-dark); }
+  .export-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .export-button--secondary { background: #fff; color: var(--navy); }
+  .export-button--secondary:hover { background: #f2f7fb; color: var(--navy); }
+  .export-chevron { transition: transform .15s ease; }
+  .export-chevron.chevron-open { transform: rotate(180deg); }
+  .export-format-menu {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 180px;
+    padding: 5px; background: #fff; border: 1px solid #d9d2c6;
+    border-radius: var(--style-radius); box-shadow: 0 10px 24px rgba(30, 25, 20, .16);
+  }
+  .export-format-option {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 7px 9px; border: 0; border-radius: 6px; cursor: pointer;
+    background: none; text-align: left; color: inherit;
+    font-family: var(--font-main); font-size: 12.5px;
+  }
+  .export-format-option:hover { background: #f6f2ea; }
+  .export-format-option.active { background: #edf3ee; color: var(--navy); font-weight: 700; }
+  .export-format-option-label small { display: block; color: var(--muted); font-size: 10px; font-weight: 400; }
+  .export-format-option-check { margin-left: auto; }
+
   /* ---------- toolbar ---------- */
   .toolbar {
     display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;
@@ -234,10 +266,23 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
           How is &ldquo;Vacant&rdquo; calculated?
         </button>
-        <button class="btn" type="button" id="csvBtn">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-          Export CSV
-        </button>
+        <div class="export-controls">
+          <div class="export-format-dropdown">
+            <button class="export-button export-button--secondary" type="button" id="exportFormatBtn"
+                    aria-haspopup="listbox" aria-expanded="false" aria-label="Export format: csv"
+                    title="Select export format">
+              <span class="export-trigger-icon"></span>
+              <span>Select format</span>
+              <svg class="export-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="export-format-menu" id="exportFormatMenu" role="listbox" aria-label="Export format" hidden></div>
+          </div>
+          <button class="export-button" type="button" id="exportBtn"
+                  aria-label="Export this list to CSV" title="Export this list to CSV">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Export
+          </button>
+        </div>
       </div>
     </div>
 
@@ -461,9 +506,56 @@
   document.getElementById('explainBtn').addEventListener('click', explain);
   document.getElementById('explainLink2').addEventListener('click', explain);
 
-  document.getElementById('csvBtn').addEventListener('click', () => {
-    alert(`Export CSV\n\nWould download ${current().length} row(s) for the current filter\n(school + metric + facet + search). No salary columns are ever included.`);
+  // ---------- export format control — PDF / CSV / Excel, as shipped ----------
+  // Default is CSV (not Excel) so a plain click on Export reproduces the old one-click CSV.
+  const EXPORT_FORMATS = [
+    { value: 'excel', label: 'Excel', extension: '.xlsx' },
+    { value: 'csv',   label: 'CSV',   extension: '.csv'  },
+    { value: 'pdf',   label: 'PDF',   extension: '.pdf'  }
+  ];
+  const FORMAT_ICONS = {
+    excel: '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#107C41"/><path d="M5 5l6 6M11 5l-6 6" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    csv:   '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#5B6472"/><path d="M4 5.5h8M4 8h8M4 10.5h5" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></svg>',
+    pdf:   '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#EC1C24"/><text x="8" y="11" text-anchor="middle" fill="#fff" font-family="Arial, sans-serif" font-size="6" font-weight="700">PDF</text></svg>'
+  };
+  let exportFormat = 'csv';
+  const formatBtn = document.getElementById('exportFormatBtn');
+  const formatMenu = document.getElementById('exportFormatMenu');
+  const exportBtn = document.getElementById('exportBtn');
+
+  function renderFormatControl() {
+    formatBtn.querySelector('.export-trigger-icon').innerHTML = FORMAT_ICONS[exportFormat];
+    formatBtn.setAttribute('aria-label', `Export format: ${exportFormat}`);
+    exportBtn.setAttribute('aria-label', `Export this list to ${exportFormat.toUpperCase()}`);
+    exportBtn.setAttribute('title', `Export this list to ${exportFormat.toUpperCase()}`);
+    formatMenu.innerHTML = EXPORT_FORMATS.map((f) => {
+      const active = f.value === exportFormat;
+      return `<button class="export-format-option${active ? ' active' : ''}" type="button"
+                      role="option" aria-selected="${active}" data-format="${f.value}">
+                <span>${FORMAT_ICONS[f.value]}</span>
+                <span class="export-format-option-label">${f.label}<small>${f.extension}</small></span>
+                ${active ? '<span class="export-format-option-check">&#10003;</span>' : ''}
+              </button>`;
+    }).join('');
+  }
+  function setFormatMenuOpen(open) {
+    formatMenu.hidden = !open;
+    formatBtn.setAttribute('aria-expanded', String(open));
+    formatBtn.querySelector('.export-chevron').classList.toggle('chevron-open', open);
+  }
+  formatBtn.addEventListener('click', () => setFormatMenuOpen(formatMenu.hidden));
+  formatMenu.addEventListener('click', (e) => {
+    const option = e.target.closest('[data-format]');
+    if (!option) return;
+    exportFormat = option.getAttribute('data-format');
+    renderFormatControl();
+    setFormatMenuOpen(false);
   });
+  exportBtn.addEventListener('click', () => {
+    const format = EXPORT_FORMATS.find((f) => f.value === exportFormat);
+    alert(`Export ${format.label} (${format.extension})\n\nWould download ${current().length} row(s) for the current filter\n(school + metric + facet + search). No salary columns are ever included.`);
+  });
+  renderFormatControl();
 
   render();
 </script>

@@ -124,7 +124,7 @@ Consequences of this change:
 - The dashboard card heading is `Vacancies by Position Title` (it re-labels with the facet — `All positions by Position Title`), not "Vacancies by Category".
 - `breakdown.titleCount` counts **distinct position titles**, not categories. Against live Athens High School data: 16 titles in the Vacant facet, 56 titles in the All facet.
 - §12.1 item 2 (`object` → label map: "Approved") is **superseded** — do not build it.
-- In the drill-down CSV, the `Category` column repeats `posName`; there is no independent category value to export.
+- In the drill-down export, the `Category` column repeats `posName`; there is no independent category value to export. The column is kept — in all three formats — for parity with the on-screen table rather than silently dropped from the file.
 - §6.2's `category?: string` query parameter was **not implemented**. The shipped bar filter is `posName?: string`.
 
 ### 3.1.2 The facet is orthogonal to the axis
@@ -169,7 +169,7 @@ Consultants ██ ──click──►         Pos #  Position      Account    
                                   40013  Teacher-EC    01-5400…       Caveats
                                   …                          [ⓘ] ──►  ──────────────────────────
                                   ────────────────────────────       Why the list and the tile
-                                  [ Export CSV ]  [ ⓘ How is … ] ──►  always agree
+                                  [Select format ▾][Export] [ⓘ How is …] ──► always agree
 ```
 
 ### 4.2 The drill-down page is a *generic* list view
@@ -232,6 +232,23 @@ Every drill-down page **and** every definition page ends with the same short blo
 > **Why this list and the tile always agree.** The tile count and this list are generated from a single shared predicate, so the row count can never drift from the number on the dashboard.
 
 This is not decoration. It is the user-facing statement of the click contract (§2), and it is what makes the invariant auditable by a reader who will never read the test suite. It **must** survive into implementation, and it must name the **concrete** predicate (`open positions` · `incumbent = absent`) rather than speaking abstractly. `kpi-drilldown-wcpss.html` carries it today; keep it there and reuse it on the definition page.
+
+### 4.6 The export control — one shape, three destinations (2026-09-12)
+
+The sketch drew a single `[ Export CSV ]` button. It now offers **PDF, CSV, or Excel**, matching the Report Dashboard's export control.
+
+- **Same control, not a second one.** The formats, their order, and their labels are the Report Dashboard's; rendering reuses `ExportFormatIcons.tsx` and the shared `.export-*` CSS (`.export-controls`, `.export-format-dropdown`, `.export-format-menu`, `.export-format-option`, `.export-button`, `.export-button--secondary`). `--kpi-primary` and `.export-button`'s background are the same colour (`#2e5e56`), and `[data-style]` maps both to `var(--style-primary)`, so it sits beside the KPI buttons under every style and in dark mode.
+- **Default is CSV, deliberately — not Excel.** The Report Dashboard defaults to Excel. The drill-down keeps CSV as the default so a plain click on **Export** reproduces the pre-change behaviour byte for byte.
+- **One row shape drives all three files.** `exportRecord()` returns a `Record<string, unknown>` keyed by the exact labels in `EXPORT_COLUMNS` — the visible table columns — because the three shared exporters each expect a record per row rather than a positional array. Keyed rather than positional is what guarantees the three files cannot disagree about column order.
+- **Destinations.** `exportGenericReport` (xlsx), `exportGenericReportToCsv`, and `exportGenericReportToPdf` — the last receiving `report: { title, sectionTitle: 'KPI drill-down' }`.
+- **The retired helper.** `exportTableToCsv` was CSV-only and positional, and had exactly one caller (this page), so it was deleted rather than left as a second way to do the same thing.
+- **Accessibility.** The trigger is a `<button>` with `aria-haspopup="listbox"` and `aria-expanded`; the menu is `role="listbox"` with `role="option"` children carrying `aria-selected`, and the active one is marked with a check. The primary button names the current format in both `aria-label` and `title` (`Export this list to PDF`).
+
+**Known limits.**
+
+- **The export covers the loaded page (≤ 25 rows), not the full `total`.** The server caps `pageSize` at `KPI_PAGE_SIZE_MAX = 200` (`src/kpi-definitions.ts`). Exporting the whole result set would need a page-walk or a dedicated unpaginated query; not implemented.
+- **The menu closes on pick or by re-pressing the trigger — not on outside click or `Escape`.** The Report Dashboard's dropdown behaves the same way; this was left identical rather than fixed in one place only. Worth addressing in both together.
+- **The PDF is landscape at 7 pt.** The 11 exported columns exceed `reportPdf.ts`'s 5-column landscape threshold. Fine for a wide position list; trim columns if it reads badly in print.
 
 ---
 
@@ -341,7 +358,7 @@ Both:
 | --- | --- |
 | `src/kpi-definitions.ts` *(server)* | **The** catalog — labels, predicates, filters, read-only SQL, `defaultFacetFor`, `KPI_CATALOG_METRICS`, and the pure evaluators (`selectMetricRows`, `computeMetricValue`, `buildBreakdown`). |
 | `client/src/KpiDashboardPage.tsx` | School selector, KPI strip, tile grid, breakdown bars, facet control. |
-| `client/src/KpiDrilldownPage.tsx` | Generic list page — table, facet, search, pagination, export, agreement footer. |
+| `client/src/KpiDrilldownPage.tsx` | Generic list page — table, facet, search, pagination, the PDF/CSV/Excel export control (§4.6), agreement footer. |
 | `client/src/KpiDefinitionPage.tsx` | Generic definition page — definition, grain, tables/columns, filters, count+rows SQL, caveats, metric switcher, agreement footer. |
 | `client/src/KpiTile.tsx` | One clickable tile: value, label, sub-line. Contains a `<button>` (drill-down) and a **sibling** `<button>` for the ⓘ (never a nested button — nesting one `<button>` inside another is invalid HTML and swallows the inner click). |
 | `client/src/KpiBarList.tsx` | Horizontal bar list where **each row is a link**. |
@@ -437,7 +454,7 @@ control, not a security boundary — see §12.2.
 
 - `SchoolCombobox.tsx` for the selector (present for admin/`view_all`; hidden for school-scoped staff, whose school is implicit).
 - The existing `positions-table` / `table-wrap` / `positions-pagination` idioms from `PositionsPage.tsx` for the list.
-- The existing export helpers (`reportExport.ts`) for **Export CSV** on the drill-down.
+- The existing export helpers — `reportExport.ts` (Excel + CSV) and `reportPdf.ts` (PDF) — plus `ExportFormatIcons.tsx` and the `.export-*` markup the Report Dashboard already uses, so the drill-down export control **is** that control rather than a parallel one (§4.6).
 - `api.ts` gains `getSchoolKpi(organization)` and `getSchoolKpiRows(params)`.
 
 ---
@@ -530,7 +547,7 @@ Fixture implementation returning the same shapes; extend `app.test.ts`. **Add th
 `KpiDashboardPage.tsx`, `KpiTile.tsx`, `KpiBarList.tsx`, school selector, facet control, routing, nav entry. Validate against the WCPSS mock. **Shipped:** 4 tiles + the `Authorized / Vacancy rate` strip, the breakdown card (relabels with the facet), the nav entry placed right after **Reports** and visible to every signed-in user, and the `kpi` / `kpi-drilldown` / `kpi-definition` view states.
 
 **Phase 5 — Drill-down page.** ✅
-`KpiDrilldownPage.tsx` — table, facet, search, pagination, CSV export, `← Back`, and the **agreement footer (§4.5)**. **Shipped:** 25/page with a windowed pager, a 300 ms-debounced search, and `exportTableToCsv` for the download. The heading badge renders `…` rather than a false `0` until the first response lands.
+`KpiDrilldownPage.tsx` — table, facet, search, pagination, CSV export, `← Back`, and the **agreement footer (§4.5)**. **Shipped:** 25/page with a windowed pager, a 300 ms-debounced search, and `exportTableToCsv` for the download. The heading badge renders `…` rather than a false `0` until the first response lands. **Updated 2026-09-12:** that CSV-only download became the shared **PDF / CSV / Excel** control (§4.6) and the one-off `exportTableToCsv` helper was deleted.
 
 **Phase 6 — Definition page.** ✅
 `KpiDefinitionPage.tsx` plus `GET /api/schools/kpi/definition` — definition, grain, what-counts table, source tables/columns, filters, count+rows SQL side by side, caveats, metric switcher, and the agreement footer. This **replaces** the drawer from the companion plan; do not build both. **Shipped:** four cards, the switcher built from `catalog.metrics` (labels, not keys), and `defaultFacet` on the payload so "Go to the list" works from a tile-less metric.
@@ -573,6 +590,8 @@ Deep-linkable URLs, keyboard pass, reduced-motion, empty states ("No vacant posi
 | 12 | Builds green | **Pass** | `tsc --noEmit` clean · `vitest run src/app.test.ts` **73/73** · `client npm run build` ✓ 6.8s. |
 
 **Also verified:** CSV export produces real content with correct quoting (`"Chahid, Mrs. Hafida A"`) and a sensible filename (`vacant-Athens-High-School---318.csv`); the empty state renders *"No positions match this filter…"* on a no-match search; the no-school empty state renders *"Choose a school above to see its KPIs."*
+
+**Also verified (multi-format export, 2026-09-12 — §4.6):** on Broughton High School's `Vacant · Teacher - Regular Classroom` list (3 rows) all three formats produced real content — Excel 9,519 B, CSV 451 B (`text/csv;charset=utf-8;`, the 11-column header plus 3 rows), PDF 14,866 B. Excel and CSV share one filename (`vacant-teacher---regular-classroom-Broughton-High-School---348.xlsx` / `.csv`); the dropdown's three options are `Excel .xlsx` / `CSV .csv` / `PDF .pdf` with CSV pre-selected, and the menu closes on every selection.
 
 **Two bugs found and fixed during this verification pass:**
 
