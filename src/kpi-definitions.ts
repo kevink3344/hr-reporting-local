@@ -29,8 +29,28 @@ import type {
  * every metric.
  */
 
-/** The certificate / contract expiry window, in days. Confirmed by the user. */
-export const EXPIRY_WINDOW_DAYS = 180;
+/**
+ * The certificate expiry window, in days.
+ *
+ * Deliberately longer than the contract window. The certificate extract is
+ * dominated by a single annual renewal cycle — 3,389 of the district's ~3,465
+ * still-valid certificates expire on one June 30 — so a 180-day window finds
+ * nothing at all for most of the year. Measured against live data on
+ * 2026-09-12: 0 people district-wide, because the nearest certificate expiry in
+ * the whole table was 281 days out. A year-wide window is what lets the tile
+ * answer the question staff actually ask: "who at this school needs to renew?"
+ */
+export const CERT_EXPIRY_WINDOW_DAYS = 365;
+
+/**
+ * The contract expiry window, in days.
+ *
+ * Held at the originally confirmed 180. It is NOT widened to match
+ * certificates: against live data a year-wide window takes the district from 16
+ * to 1,490 people, which would bury the handful of contracts that actually need
+ * attention. The two windows are separate constants for exactly this reason.
+ */
+export const CONTRACT_EXPIRY_WINDOW_DAYS = 180;
 
 /** How many Position Titles the breakdown chart shows before offering "show all". */
 export const KPI_BAR_LIMIT = 10;
@@ -367,17 +387,18 @@ const RAW_METRICS: KpiMetricDefinition[] = [
     predicate: {
       base: 'active_assignments',
       incumbent: 'present',
-      certExpiresWithinDays: EXPIRY_WINDOW_DAYS
+      certExpiresWithinDays: CERT_EXPIRY_WINDOW_DAYS
     },
-    definition: `The number of people at this school whose earliest still-valid certificate expires within ${EXPIRY_WINDOW_DAYS} days.`,
-    note: `Counted by person, not by certificate — a person with three certificates expiring in the window counts once. Certificates that have already expired are ignored; the window starts today, not with the person's last review.`,
+    windowDays: CERT_EXPIRY_WINDOW_DAYS,
+    definition: `The number of people at this school whose earliest still-valid certificate expires within ${CERT_EXPIRY_WINDOW_DAYS} days.`,
+    note: `Counted by person, not by certificate — a person with three certificates expiring in the window counts once. Certificates that have already expired are ignored; the window starts today, not with the person's last review. The window is a full year because the district renews on one annual cycle, so a shorter look-ahead would read zero for most of the year.`,
     filters: [
       OPEN_SEAT_FILTER,
       SCHOOL_FILTER,
       PRESENT_FILTER,
       {
         column: 'cert_info.cert_expiration',
-        test: `A still-valid certificate (cert_expiration >= today) expires on or before today + ${EXPIRY_WINDOW_DAYS} days.`
+        test: `A still-valid certificate (cert_expiration >= today) expires on or before today + ${CERT_EXPIRY_WINDOW_DAYS} days.`
       }
     ],
     sourceTables: ['position_info', 'employee_info', 'cert_info'],
@@ -392,18 +413,19 @@ const RAW_METRICS: KpiMetricDefinition[] = [
     predicate: {
       base: 'active_assignments',
       incumbent: 'present',
-      contractEndsWithinDays: EXPIRY_WINDOW_DAYS
+      contractEndsWithinDays: CONTRACT_EXPIRY_WINDOW_DAYS
     },
-    definition: `The number of people at this school whose contract end date falls within the next ${EXPIRY_WINDOW_DAYS} days.`,
+    windowDays: CONTRACT_EXPIRY_WINDOW_DAYS,
+    definition: `The number of people at this school whose contract end date falls within the next ${CONTRACT_EXPIRY_WINDOW_DAYS} days.`,
     note:
-      'Counted by person. A contract with no end date — blank, or stored as 0000-00-00 — never counts as expiring, and end dates already in the past are excluded rather than reported as overdue.',
+      'Counted by person. A contract with no end date — blank, or stored as 0000-00-00 — never counts as expiring, and end dates already in the past are excluded rather than reported as overdue. The window is 180 days, deliberately shorter than the certificate window: most contracts are open-ended, so a year-wide look-ahead would return most of the school.',
     filters: [
       OPEN_SEAT_FILTER,
       SCHOOL_FILTER,
       PRESENT_FILTER,
       {
         column: 'employee_info.contract_end',
-        test: `contract_end is on or after today and on or before today + ${EXPIRY_WINDOW_DAYS} days.`
+        test: `contract_end is on or after today and on or before today + ${CONTRACT_EXPIRY_WINDOW_DAYS} days.`
       }
     ],
     sourceTables: ['position_info', 'employee_info'],
@@ -508,6 +530,9 @@ export function computeMetricValue(
     drilldown: metric.drilldown,
     // A share metric is still clickable — it just opens its underlying list.
     drillable: metric.drilldown !== null,
+    // Carried per tile, not once per payload: the two expiry tiles look ahead
+    // by different amounts, so "within N days" has to come from the metric.
+    windowDays: metric.windowDays,
     defaultFacet: defaultFacetFor(metric)
   };
 }
@@ -657,7 +682,10 @@ export function buildSchoolKpiPayload(
   return {
     school: organization,
     asOf: isoDateOnly(today),
-    windowDays: EXPIRY_WINDOW_DAYS,
+    expiryWindows: {
+      certs: CERT_EXPIRY_WINDOW_DAYS,
+      contracts: CONTRACT_EXPIRY_WINDOW_DAYS
+    },
     facet,
     tiles: KPI_TILE_ORDER.map((key) => computeMetricValue(getKpiMetric(key), rows, today)),
     strip: KPI_STRIP_ORDER.map((key) => computeMetricValue(getKpiMetric(key), rows, today)),

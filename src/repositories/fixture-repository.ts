@@ -80,8 +80,10 @@ function isoDaysFromToday(days: number): string {
 }
 
 // Deliberately deterministic relative to "today": the expiry windows below must
-// stay inside (or outside) the 180-day window no matter when the fixture runs,
-// or the expiring tiles would drift over time.
+// stay inside (or outside) the certificate window no matter when the fixture
+// runs, or the expiring tiles would drift over time. The cert seeds use 30/120
+// (inside 365) and 400 (outside 365); the contract seeds use 45/100 (inside 180)
+// and 500 (outside 180).
 const FIXTURE_OPEN_SEAT = isoDaysFromToday(-30);
 const FIXTURE_SEAT_ENDING = isoDaysFromToday(300);
 
@@ -99,9 +101,9 @@ type FixtureKpiSeed = {
   mailstop?: string;
   tenureCode?: string;
   contractId?: string;
-  /** Days from today; <= 180 makes the seat count as an expiring contract. */
+  /** Days from today; <= 180 (CONTRACT_EXPIRY_WINDOW_DAYS) counts as expiring. */
   contractEndsInDays?: number;
-  /** Days from today; <= 180 makes the person count as an expiring cert. */
+  /** Days from today; <= 365 (CERT_EXPIRY_WINDOW_DAYS) counts as expiring. */
   certExpiresInDays?: number;
   degree?: string;
 };
@@ -124,7 +126,7 @@ const fixtureKpiSeeds: FixtureKpiSeed[] = [
     accountNumber: '01-5410-005-114-0122', monthsAvailable: 12, monthsUsed: 12,
     fullName: 'Sample, Jordan', employeeNumber: '900002', personId: '900002',
     classroom: 'Room 112', mailstop: 'MS-12', tenureCode: 'N Code', contractId: 'Regular',
-    // Both windows are outside the 180-day horizon on purpose.
+    // Both windows are outside their horizons on purpose (400 > 365 certs, 500 > 180 contracts).
     contractEndsInDays: 500, certExpiresInDays: 400, degree: 'EdD'
   },
   {

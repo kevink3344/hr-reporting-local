@@ -633,6 +633,11 @@ export type KpiMetricValue = {
   drilldown: KpiMetricKey | null;
   drillable: boolean;
   /**
+   * The look-ahead in days. Set only on the two expiry tiles, because the
+   * certificate and contract windows are deliberately different lengths.
+   */
+  windowDays?: number;
+  /**
    * The facet the drill-down should open with. Server-supplied so the client
    * never has to guess that "Vacant" implies `facet=vacant`.
    */
@@ -674,6 +679,8 @@ export type KpiMetricDefinition = {
   sourceTables: string[];
   sql: { count: string; rows: string };
   drilldown: KpiMetricKey | null;
+  /** The look-ahead in days; only the two expiry metrics carry one. */
+  windowDays?: number;
   /** The facet this metric's list opens with. */
   defaultFacet?: KpiFacet;
 };
@@ -696,7 +703,11 @@ export type KpiBreakdown = {
 export type SchoolKpiPayload = {
   school: string;
   asOf: string;
-  windowDays: number;
+  /**
+   * The two expiry look-aheads, side by side. They differ on purpose, so there
+   * is no single "the window" number any more.
+   */
+  expiryWindows: { certs: number; contracts: number };
   facet: KpiFacet;
   /** 4 tiles, in display order. */
   tiles: KpiMetricValue[];
@@ -727,7 +738,7 @@ export type SchoolKpiRows = {
 };
 
 export type KpiCatalog = {
-  windowDays: number;
+  expiryWindows: { certs: number; contracts: number };
   barLimit: number;
   tileOrder: KpiMetricKey[];
   stripOrder: KpiMetricKey[];

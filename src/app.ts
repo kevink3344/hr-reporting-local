@@ -24,7 +24,8 @@ import { viewDefinitionSchema } from './report-views.js';
 import { reportHighlightRulesSchema } from './report-highlight.js';
 import { validateSubreportSql } from './reports-sql.js';
 import {
-  EXPIRY_WINDOW_DAYS,
+  CERT_EXPIRY_WINDOW_DAYS,
+  CONTRACT_EXPIRY_WINDOW_DAYS,
   KPI_BAR_LIMIT,
   KPI_CATALOG_METRICS,
   KPI_METRIC_KEYS,
@@ -840,7 +841,10 @@ export function createApp(
   // metric switcher without hard-coding the key list.
   application.get('/api/schools/kpi/metrics', (_request, response) => {
     response.json({
-      windowDays: EXPIRY_WINDOW_DAYS,
+      expiryWindows: {
+        certs: CERT_EXPIRY_WINDOW_DAYS,
+        contracts: CONTRACT_EXPIRY_WINDOW_DAYS
+      },
       barLimit: KPI_BAR_LIMIT,
       tileOrder: KPI_TILE_ORDER,
       stripOrder: KPI_STRIP_ORDER,

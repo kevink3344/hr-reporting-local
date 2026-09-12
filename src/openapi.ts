@@ -962,11 +962,19 @@ export const openApiDocument = {
       },
       SchoolKpiPayload: {
         type: 'object',
-        required: ['school', 'asOf', 'windowDays', 'facet', 'tiles', 'strip', 'breakdown'],
+        required: ['school', 'asOf', 'expiryWindows', 'facet', 'tiles', 'strip', 'breakdown'],
         properties: {
           school: { type: 'string', example: 'Athens High School - 318' },
           asOf: { type: 'string', example: '2026-09-11' },
-          windowDays: { type: 'integer', example: 180, description: 'The expiry window the two expiry tiles use.' },
+          expiryWindows: {
+            type: 'object',
+            required: ['certs', 'contracts'],
+            description: 'Look-ahead in days for each expiry tile. They differ on purpose.',
+            properties: {
+              certs: { type: 'integer', example: 365, description: 'Certificate window — a full year, because the district renews on one annual cycle.' },
+              contracts: { type: 'integer', example: 180 }
+            }
+          },
           facet: { allOf: [{ $ref: '#/components/schemas/KpiFacet' }], description: 'Echoed so the control stays in sync.' },
           tiles: {
             type: 'array',
@@ -1059,9 +1067,16 @@ export const openApiDocument = {
       },
       KpiCatalog: {
         type: 'object',
-        required: ['windowDays', 'barLimit', 'tileOrder', 'stripOrder', 'keys', 'metrics'],
+        required: ['expiryWindows', 'barLimit', 'tileOrder', 'stripOrder', 'keys', 'metrics'],
         properties: {
-          windowDays: { type: 'integer', example: 180 },
+          expiryWindows: {
+            type: 'object',
+            required: ['certs', 'contracts'],
+            properties: {
+              certs: { type: 'integer', example: 365 },
+              contracts: { type: 'integer', example: 180 }
+            }
+          },
           barLimit: { type: 'integer', example: 10 },
           tileOrder: { type: 'array', items: { $ref: '#/components/schemas/KpiMetricKey' } },
           stripOrder: { type: 'array', items: { $ref: '#/components/schemas/KpiMetricKey' } },

@@ -529,6 +529,12 @@ export type KpiMetricDefinition = {
   /** Base metric a `share` aggregate divides by. */
   shareOf?: KpiMetricKey;
   predicate: KpiPredicate;
+  /**
+   * The look-ahead this metric counts over, in days. Set only on the two expiry
+   * metrics. It lives on the metric rather than once per payload because the
+   * certificate and contract windows are deliberately different lengths.
+   */
+  windowDays?: number;
   /** One sentence: what this number means. Never empty (enforced by test). */
   definition: string;
   /** What inflates or deflates the number. Never empty (enforced by test). */
@@ -559,6 +565,8 @@ export type KpiMetricValue = {
   note: string;
   drilldown: KpiMetricKey | null;
   drillable: boolean;
+  /** The look-ahead in days; only the two expiry tiles carry one. */
+  windowDays?: number;
   /**
    * The facet the drill-down opens with, derived from the metric by the server
    * so the client never has to guess that "Vacant" implies `facet=vacant`.
@@ -583,7 +591,11 @@ export type KpiBreakdown = {
 export type SchoolKpiPayload = {
   school: string;
   asOf: string;
-  windowDays: number;
+  /**
+   * The two expiry look-aheads, reported side by side rather than collapsed
+   * into one "the window" number — they are different lengths on purpose.
+   */
+  expiryWindows: { certs: number; contracts: number };
   /** The facet this payload was built for, echoed so the control stays in sync. */
   facet: KpiFacet;
   /** The four clickable tiles, in display order. */

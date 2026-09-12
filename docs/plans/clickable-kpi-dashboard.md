@@ -9,7 +9,7 @@
 > - [`kpi-drilldown-wcpss.html`](../screenshots/kpi-drilldown-wcpss.html) — the drill-down **list page** (the click target).
 > - [`kpi-definition-wcpss.html`](../screenshots/kpi-definition-wcpss.html) — the **definition page** behind the ⓘ.
 >
-> **Decisions confirmed (2026-09-11):** vacancy is *open positions with a blank incumbent*; ~~the `object`→category label map is approved~~ (superseded 2026-09-12 — the axis groups on **Position Title**, §3.1.1); the expiry window is **180 days**; the explanation is a **page, not a dialog**; and the drill-down page keeps its "why this list and the tile always agree" footer. See §12.1.
+> **Decisions confirmed (2026-09-11):** vacancy is *open positions with a blank incumbent*; ~~the `object`→category label map is approved~~ (superseded 2026-09-12 — the axis groups on **Position Title**, §3.1.1); ~~the expiry window is **180 days**~~ (superseded 2026-09-12 — the two expiry metrics now look ahead **different** distances: **365 days** for certificates, **180 days** for contracts; see §3.1.3); the explanation is a **page, not a dialog**; and the drill-down page keeps its "why this list and the tile always agree" footer. See §12.1.
 >
 > **Status: implemented and browser-verified (2026-09-12).** Server, client, OpenAPI, and tests are in place; **73/73** server tests pass, `tsc --noEmit` is clean, and the client builds. Per-criterion evidence is in **§11.1**, and the implementation deviations are in **§3.1.1**, **§4.4**, and **§12.1.1**.
 
@@ -97,8 +97,8 @@ Every entry below is a live, clickable tile. `Filled / Vacant / Expiring Certs /
 | 1 | **Filled** | `open_positions` + `incumbent = present` | positions | One row per budgeted seat that currently has someone in it. |
 | 2 | **Vacant** | `open_positions` + `incumbent = absent` | positions | The headline number from the sketch. |
 | 3 | **Authorized** | `open_positions` + `incumbent = any` | positions | `Filled + Vacant`. The denominator of the vacancy rate. |
-| 4 | **Expiring Certs** | `active_assignments` + `certExpiresWithinDays: 180` | people | Distinct people whose `cert_info.cert_expiration` falls inside the window (`EXPIRY_WINDOW_DAYS = 180`, confirmed). |
-| 5 | **Expiring Contracts** | `active_assignments` + `contractEndsWithinDays: 180` | people | Distinct people whose `contract_end` falls inside the window (same 180-day constant). |
+| 4 | **Expiring Certs** | `active_assignments` + `certExpiresWithinDays: 365` | people | Distinct people whose `cert_info.cert_expiration` falls inside the window (`CERT_EXPIRY_WINDOW_DAYS = 365`, confirmed). |
+| 5 | **Expiring Contracts** | `active_assignments` + `contractEndsWithinDays: 180` | people | Distinct people whose `contract_end` falls inside the window (`CONTRACT_EXPIRY_WINDOW_DAYS = 180`, confirmed). |
 | 6 | **Active staff** | `active_assignments` (no extra filter) | people | Headcount of active assignments. |
 | 7 | **Vacancy rate** | derived: `Vacant / Authorized` | positions | Renders as `26.2%`; clicking opens the **Vacant** list (a percentage with no list is not clickable). |
 
@@ -143,6 +143,31 @@ Two rules follow, and both are load-bearing for §11.1:
 2. **An omitted `facet` means the metric's own `defaultFacet`, not `all`.** `defaultFacetFor(metric)` returns `filled` for Filled, `vacant` for Vacant, `vacant` for Vacancy rate, and `all` for everything else. This is what makes the tile number and the list total agree *literally* rather than coincidentally — see §11.1.
 
 > **Note on `all`.** `All (227)` on the Vacant tile is not a bug and not a widening to closed seats: `OPEN_SEAT_SQL` still scopes to open positions, so `All` means "all *open* seats", which is exactly the `Authorized` figure (227). Clicking `All` on any tile therefore lands on the same 227-row set the strip reports.
+
+### 3.1.3 The two expiry windows are deliberately different (2026-09-12)
+
+The original decision (§12.1, row 3) was **one** constant, `EXPIRY_WINDOW_DAYS = 180`, driving both expiry metrics. Against live data that produced **`0` for Expiring Certs at every school in the district**, which is not an empty state — it is a dead metric.
+
+The cause is the district's renewal calendar. Certificates are reissued on a single annual cycle: measured 2026-09-12, **3,389 of the ~3,465 live certificates carry the same `2027-06-30` expiry**, and the nearest future expiry anywhere in the extract is **281 days out**. There is therefore a dead zone from **+181 to +280 days** in which *any* window still returns exactly zero:
+
+| Window | Expiring Certs (people) | Schools with ≥1 | Expiring Contracts (people) |
+| --- | --- | --- | --- |
+| 180 days | **0** | 0 | 16 |
+| **365 days** | **3,208** | **246** | 1,490 |
+| 730 days | 5,762 | 264 | 1,737 |
+
+Because a single constant drove both metrics, widening it to make certificates useful would have taken contracts from **16 → 1,490 people (~93×)** — turning a short, actionable list into a second vacancy report. The constant was therefore **split**:
+
+```ts
+export const CERT_EXPIRY_WINDOW_DAYS = 365;     // one annual renewal cycle
+export const CONTRACT_EXPIRY_WINDOW_DAYS = 180; // deliberately shorter
+```
+
+Three consequences worth knowing:
+
+1. **The window is now a property of the metric, not of the payload.** `SchoolKpiPayload.windowDays` became `expiryWindows: { certs, contracts }`, and `KpiMetricValue`/`KpiMetricDefinition` gained an optional `windowDays`. The tile subtitle reads the metric's own value, so *Expiring Certs* says **within 365 days** and *Expiring Contracts* says **within 180 days** on the same screen. A single shared label would now be a lie for one of them.
+2. **"Within a year" is the honest framing for certificates, not "soon".** At 365 days the district figure is dominated by the June-30 renewal cohort, so the number answers "how many people will need something before the next renewal passes" rather than "who is about to lapse".
+3. **Contracts keep the tight window on purpose.** 180 days keeps that list at the ~16 district-wide people whose contracts genuinely end soon; the `730 days` row above shows how quickly a wide window degenerates into noise.
 
 ---
 
@@ -535,7 +560,7 @@ Net effect: the earlier plan's Phase 1 ("definitions module") and this plan's §
 > **All seven phases are implemented** (2026-09-12). The notes below record what each phase actually produced where it differs from the draft.
 
 **Phase 1 — Definitions & contract (no UI).** ✅
-Create `src/kpi-definitions.ts` with the §3 catalog, predicates, definitions, notes, and static read-only SQL. Add `SchoolKpiRepository` to `contracts.ts` and the payload/row-query types. **The confirmed answers are constants in this file** — `incumbent = absent` for vacancy and `EXPIRY_WINDOW_DAYS = 180`. *Highest-value deliverable; unblocks everything.* **Shipped:** the ~~`object`→label map~~ was **not** built (superseded — §3.1.1); grouping is on `pos_name`, and the module also exports `defaultFacetFor`, `KPI_CATALOG_METRICS`, and the evaluators (`selectMetricRows`, `computeMetricValue`, `buildBreakdown`) that the fixture and Turso paths reuse, so all three data sources share one predicate.
+Create `src/kpi-definitions.ts` with the §3 catalog, predicates, definitions, notes, and static read-only SQL. Add `SchoolKpiRepository` to `contracts.ts` and the payload/row-query types. **The confirmed answers are constants in this file** — `incumbent = absent` for vacancy plus the two expiry windows (`CERT_EXPIRY_WINDOW_DAYS = 365`, `CONTRACT_EXPIRY_WINDOW_DAYS = 180`; see §3.1.2). *Highest-value deliverable; unblocks everything.* **Shipped:** the ~~`object`→label map~~ was **not** built (superseded — §3.1.1); grouping is on `pos_name`, and the module also exports `defaultFacetFor`, `KPI_CATALOG_METRICS`, and the evaluators (`selectMetricRows`, `computeMetricValue`, `buildBreakdown`) that the fixture and Turso paths reuse, so all three data sources share one predicate.
 
 **Phase 2 — MySQL repository + endpoints.** ✅
 `mysql-kpi-repository.ts` built on `OPEN_POSITIONS_SQL`. Wire `GET /api/schools/kpi` and `GET /api/schools/kpi/rows` with school scoping and pagination. OpenAPI schemas. **Shipped:** `SCHOOL_KPI_SQL` plus the two extra endpoints the UI needed — `/kpi/definition` and `/kpi/metrics` — and `UNKNOWN_KPI_METRIC` → **400** via `repoErrorToStatus`.
@@ -610,7 +635,7 @@ Deep-linkable URLs, keyboard pass, reduced-motion, empty states ("No vacant posi
 | --- | --- | --- | --- |
 | 1 | Vacancy definition | **Open positions with a blank incumbent** — `incumbent = 'absent'`, i.e. both `full_name` and `emp_number` empty. *Not* `authorized − filled`. | `kpi-definitions.ts` → `vacant.predicate` |
 | 2 | `object` code → category label | ~~**Approved.**~~ **Superseded 2026-09-12** — the axis groups on **Position Title** (`pi.pos_name`); no label map was built. | §3.1.1, `kpi-definitions.ts` → `buildBreakdown` |
-| 3 | Expiry window | **180 days** for both certificates and contracts. | `kpi-definitions.ts` → `EXPIRY_WINDOW_DAYS = 180` |
+| 3 | Expiry window | **365 days** for certificates, **180 days** for contracts (split 2026-09-12 — see §3.1.3). | `kpi-definitions.ts` → `CERT_EXPIRY_WINDOW_DAYS = 365`, `CONTRACT_EXPIRY_WINDOW_DAYS = 180` |
 | 4 | Explanation surface | **A page, not a dialog** — the ⓘ and "see the definition and read-only SQL" both navigate to `?metric=<key>`. | §4.4, `KpiDefinitionPage.tsx` |
 | 5 | Agreement footer | **Kept** on the drill-down page, and reused on the definition page. | §4.5 |
 
@@ -626,7 +651,7 @@ Because 1–3 are constants in one file, changing any of them later is a one-lin
 
 ### 12.1.2 Two facts a reader of the dashboard will notice
 
-**Both expiry tiles read `0` against current live data.** *Expiring Certs* and *Expiring Contracts* are `0 / within 180 days` for Athens High School — not because the metric is stubbed, but because no certificate or contract end date in the live extract currently falls inside the 180-day window (the extract is dated 2026-09-11 and its end dates sit beyond it). The tiles, lists, and definitions are wired and the empty state renders correctly; the numbers are simply zero. Worth re-checking once live data with nearer expiry dates is loaded.
+**The certificate tile read `0` against live data — and that was real, not a bug.** *Expiring Certs* was `0 / within 180 days` for Athens High School because the district renews certificates on one annual cycle: the nearest future `cert_expiration` anywhere in the extract is 281 days out, so a 180-day window is empty for every school, not just Athens. The tile, list, and definition were all wired correctly; the window was simply too short to ever contain the data. **Resolved 2026-09-12** by giving certificates their own 365-day window (§3.1.3). *Expiring Contracts* at Athens was likewise `0`, and still may be — Athens has no contract ending inside 180 days — but that metric was already returning data district-wide (20 rows across 15 schools; Willow Springs Elementary `624` is the best example with 2 distinct people), so it was never the dead metric. When checking a school, pick one from the certificate list in §3.1.3 rather than Athens for the certificate tile.
 
 **The `All` facet count and the tile count can differ.** `Vacant 25` vs `All (227)` is expected: the facet widens the *seat-status* axis only. And the *Expiring* metrics count **distinct people** while their lists show **one row per seat**, so a reader comparing a tile to a row count on that page can legitimately see two different numbers. Parity (§11.1) still holds there, because the tile value and the list total are both derived from the *same evaluated row set* on the server — `metricValue` and `total` are two views of one computation, not two queries. What parity does **not** promise is that the tile equals the number of `<tr>` elements on screen: that is the page, not the list.
 

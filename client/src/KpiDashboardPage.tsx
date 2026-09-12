@@ -84,9 +84,11 @@ export function KpiDashboardPage({ session, schools, schoolId, onSchoolChange, p
         if (authorizedCount <= 0) return `of 0 authorized`;
         return `${((metric.value / authorizedCount) * 100).toFixed(1)}% of ${authorized?.displayValue ?? '0'} authorized`;
       }
-      return `within ${payload?.windowDays ?? 0} days`;
+      // The window travels on the metric, so the certificate tile can honestly
+      // say a longer look-ahead than the contract tile next to it.
+      return typeof metric.windowDays === 'number' ? `within ${metric.windowDays} days` : '';
     },
-    [authorizedCount, authorized?.displayValue, payload?.windowDays]
+    [authorizedCount, authorized?.displayValue]
   );
 
   function drill(metric: KpiMetricValue) {

@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from './app.js';
 import {
-  EXPIRY_WINDOW_DAYS,
+  CERT_EXPIRY_WINDOW_DAYS,
+  CONTRACT_EXPIRY_WINDOW_DAYS,
   KPI_BAR_LIMIT,
   KPI_METRIC_KEYS,
   KPI_PAGE_SIZE_MAX,
@@ -566,7 +567,10 @@ describe('Clickable KPI dashboard', () => {
 
     expect(payload.school).toBe('Test Oak Elementary');
     expect(payload.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(payload.windowDays).toBe(EXPIRY_WINDOW_DAYS);
+    expect(payload.expiryWindows).toEqual({
+      certs: CERT_EXPIRY_WINDOW_DAYS,
+      contracts: CONTRACT_EXPIRY_WINDOW_DAYS
+    });
     expect(payload.facet).toBe('all');
     expect(payload.tiles.map((tile) => tile.key)).toEqual(KPI_TILE_ORDER);
     expect(payload.strip.map((metric) => metric.key)).toEqual(KPI_STRIP_ORDER);
@@ -879,7 +883,7 @@ describe('Clickable KPI dashboard', () => {
 
   it('publishes the catalog metadata so the client does not hard-code it', async () => {
     const { status, body } = await getJson<{
-      windowDays: number;
+      expiryWindows: { certs: number; contracts: number };
       barLimit: number;
       tileOrder: KpiMetricKey[];
       stripOrder: KpiMetricKey[];
@@ -888,7 +892,10 @@ describe('Clickable KPI dashboard', () => {
     }>('/api/schools/kpi/metrics');
 
     expect(status).toBe(200);
-    expect(body.windowDays).toBe(EXPIRY_WINDOW_DAYS);
+    expect(body.expiryWindows).toEqual({
+      certs: CERT_EXPIRY_WINDOW_DAYS,
+      contracts: CONTRACT_EXPIRY_WINDOW_DAYS
+    });
     expect(body.barLimit).toBe(KPI_BAR_LIMIT);
     expect(body.tileOrder).toEqual(KPI_TILE_ORDER);
     expect(body.stripOrder).toEqual(KPI_STRIP_ORDER);

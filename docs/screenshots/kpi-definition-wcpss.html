@@ -303,7 +303,14 @@
 
 <script>
   const SCHOOL = 'Broughton High School';
-  const WINDOW_DAYS = 180; // ← confirmed
+
+  /* Two windows, deliberately different:
+       · certificates renew on one annual district-wide cycle (June 30), so a year is the
+         shortest window that ever shows anyone — a 180-day window is exactly 0 people.
+       · contracts are staggered, so 180 days stays meaningful where a year would balloon.
+     In the app these are CERT_EXPIRY_WINDOW_DAYS and CONTRACT_EXPIRY_WINDOW_DAYS. */
+  const CERT_WINDOW_DAYS = 365;      // ← confirmed
+  const CONTRACT_WINDOW_DAYS = 180;  // ← confirmed
 
   /* The three rules that open a position. Shared verbatim by Filled / Vacant / Authorized. */
   const OPEN_RULES = [
@@ -372,7 +379,7 @@ JOIN employee_info e
        = IFNULL(CAST(c.person_id AS UNSIGNED),0)
 WHERE e.organization = ?                        -- school scope
   AND c.cert_expiration >= NOW()
-  AND c.cert_expiration <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY);`;
+  AND c.cert_expiration <  DATE_ADD(NOW(), INTERVAL ${CERT_WINDOW_DAYS} DAY);`;
 
   const CERT_ROWS = `-- Drill-down list — identical predicate, one row per person-certificate
 SELECT DISTINCT
@@ -385,7 +392,7 @@ JOIN employee_info e
        = IFNULL(CAST(c.person_id AS UNSIGNED),0)
 WHERE e.organization = ?                        -- school scope
   AND c.cert_expiration >= NOW()
-  AND c.cert_expiration <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY)
+  AND c.cert_expiration <  DATE_ADD(NOW(), INTERVAL ${CERT_WINDOW_DAYS} DAY)
 ORDER BY c.cert_expiration
 LIMIT ? OFFSET ?;                              -- capped at REPORT_ROW_CAP`;
 
@@ -394,7 +401,7 @@ SELECT COUNT(DISTINCT e.person_id) AS value
 FROM employee_info e
 WHERE e.organization = ?                        -- school scope
   AND e.contract_end >= NOW()
-  AND e.contract_end <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY);`;
+  AND e.contract_end <  DATE_ADD(NOW(), INTERVAL ${CONTRACT_WINDOW_DAYS} DAY);`;
 
   const CONTRACT_ROWS = `-- Drill-down list — identical predicate, one row per person
 SELECT DISTINCT
@@ -404,7 +411,7 @@ SELECT DISTINCT
 FROM employee_info e
 WHERE e.organization = ?                        -- school scope
   AND e.contract_end >= NOW()
-  AND e.contract_end <  DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY)
+  AND e.contract_end <  DATE_ADD(NOW(), INTERVAL ${CONTRACT_WINDOW_DAYS} DAY)
 ORDER BY e.contract_end
 LIMIT ? OFFSET ?;                              -- capped at REPORT_ROW_CAP`;
 
@@ -419,15 +426,15 @@ LIMIT ? OFFSET ?;                              -- capped at REPORT_ROW_CAP`;
       : { table: '<span class="brand-sub">— none —</span>', cols: '—', role: 'Contracts live entirely on <code>employee_info</code>.' }
   ];
 
-  const WINDOW_RULE = {
-    sql: `expiry &gt;= NOW() AND expiry &lt; DATE_ADD(NOW(), INTERVAL ${WINDOW_DAYS} DAY)`,
-    plain: `Already expired rows are excluded (they need a different conversation), and the horizon is ${WINDOW_DAYS} days. ${WINDOW_DAYS} is a single constant in kpi-definitions.ts.`
-  };
+  const WINDOW_RULE = (days) => ({
+    sql: `expiry &gt;= NOW() AND expiry &lt; DATE_ADD(NOW(), INTERVAL ${days} DAY)`,
+    plain: `Already expired rows are excluded (they need a different conversation), and the horizon is ${days} days — certificates look a year ahead, contracts 180 days.`
+  });
 
-  const peopleCaveat = (what) => `<div>
+  const peopleCaveat = (what, days) => `<div>
     <b>Caveats that change this number.</b>
     <ul>
-      <li><b>Window, not “soon”.</b> “Expiring” means inside ${WINDOW_DAYS} days exactly. Already-expired rows are excluded.</li>
+      <li><b>Window, not “soon”.</b> “Expiring” means inside ${days} days exactly. Already-expired rows are excluded.</li>
       <li><b>Distinct people, not certificates.</b> A person with three expiring certificates counts once, so the tile uses <code>COUNT(DISTINCT person_id)</code>. The list may therefore show more rows than the tile for a different metric definition — see the parity test.</li>
       <li><b>Which date is authoritative.</b> ${what}. Confirm this against <code>nbpts_expire</code>, which sits on the same rows.</li>
       <li><b>Blank end dates.</b> A <code>NULL</code> expiry cannot be inside any window and is excluded, so “no date recorded” never appears as “expiring”.</li>
@@ -539,59 +546,59 @@ LIMIT ? OFFSET ?;                              -- capped at REPORT_ROW_CAP`;
 
     'expiring-certs': {
       label: 'Expiring Certs', title: 'Expiring certifications', unit: 'people', drilldown: 'people',
-      lead: `Expiring Certs counts <b>distinct people on staff whose certificate expires within ${WINDOW_DAYS} days</b>.`,
+      lead: `Expiring Certs counts <b>distinct people on staff whose certificate expires within ${CERT_WINDOW_DAYS} days</b>.`,
       def: [
         ['Grain', 'One row per person (<code>COUNT(DISTINCT person_id)</code>).'],
-        ['Answer', `<code>cert_expiration</code> inside the next ${WINDOW_DAYS} days.`],
-        ['Window', `${WINDOW_DAYS} days, already confirmed. A single constant in <code>kpi-definitions.ts</code>.`],
+        ['Answer', `<code>cert_expiration</code> inside the next ${CERT_WINDOW_DAYS} days.`],
+        ['Window', `${CERT_WINDOW_DAYS} days — a year, because the district renews certificates on one annual cycle. Constant <code>CERT_EXPIRY_WINDOW_DAYS</code> in <code>kpi-definitions.ts</code>.`],
         ['Drill-down', 'people — name, position, certificate, expiry, days left.']
       ],
       rules: [
-        ['yes', `Certificates expiring in 0–${WINDOW_DAYS} days`, 'Inclusive of today, exclusive of the horizon.'],
+        ['yes', `Certificates expiring in 0–${CERT_WINDOW_DAYS} days`, 'Inclusive of today, exclusive of the horizon.'],
         ['yes', 'Faculty and staff currently on assignment', 'Counted once per person, however many certificates they hold.'],
         ['no', 'Already-expired certificates', 'A lapsed certificate is a compliance question, not a planning one.'],
-        ['no', `Anything beyond ${WINDOW_DAYS} days`, 'Outside the window.'],
+        ['no', `Anything beyond ${CERT_WINDOW_DAYS} days`, 'Outside the window.'],
         ['no', 'Blank expiry dates', 'An unrecorded date cannot be “expiring”, so it never inflates this number.'],
         ['no', 'Other schools', 'Scoped by <code>e.organization</code>.']
       ],
       tables: PEOPLE_TABLES('expiring-certs'),
       filters: [
         { sql: 'e.organization = ?', plain: 'School scope.' },
-        WINDOW_RULE,
+        WINDOW_RULE(CERT_WINDOW_DAYS),
         { sql: 'COUNT(DISTINCT c.person_id)', plain: 'One person with three certificates counts once. The list shows one row per certificate, so it can be longer than the tile — that is why the tile is defined as people.' }
       ],
       countSql: CERT_COUNT,
       rowsSql: CERT_ROWS,
-      caveat: peopleCaveat('<code>cert_expiration</code> is treated as authoritative'),
+      caveat: peopleCaveat('<code>cert_expiration</code> is treated as authoritative', CERT_WINDOW_DAYS),
       showCats: false
     },
 
     'expiring-contracts': {
       label: 'Expiring Contracts', title: 'Expiring contracts', unit: 'people', drilldown: 'people',
-      lead: `Expiring Contracts counts <b>distinct people on staff whose contract ends within ${WINDOW_DAYS} days</b>.`,
+      lead: `Expiring Contracts counts <b>distinct people on staff whose contract ends within ${CONTRACT_WINDOW_DAYS} days</b>.`,
       def: [
         ['Grain', 'One row per person (<code>COUNT(DISTINCT person_id)</code>).'],
-        ['Answer', `<code>contract_end</code> inside the next ${WINDOW_DAYS} days.`],
-        ['Window', `${WINDOW_DAYS} days — the same constant as certificates.`],
+        ['Answer', `<code>contract_end</code> inside the next ${CONTRACT_WINDOW_DAYS} days.`],
+        ['Window', `${CONTRACT_WINDOW_DAYS} days — deliberately shorter than the certificate window, so this list stays a short list of contracts actually coming up. Constant <code>CONTRACT_EXPIRY_WINDOW_DAYS</code> in <code>kpi-definitions.ts</code>.`],
         ['Drill-down', 'people — name, position, contract, end date, days left.']
       ],
       rules: [
-        ['yes', `Contracts ending in 0–${WINDOW_DAYS} days`, 'Inclusive of today, exclusive of the horizon.'],
+        ['yes', `Contracts ending in 0–${CONTRACT_WINDOW_DAYS} days`, 'Inclusive of today, exclusive of the horizon.'],
         ['yes', 'Currently active staff', 'Counted once per person.'],
         ['no', 'Already-ended contracts', 'Past dates are a different list — separations, not planning.'],
-        ['no', `Anything beyond ${WINDOW_DAYS} days`, 'Outside the window.'],
+        ['no', `Anything beyond ${CONTRACT_WINDOW_DAYS} days`, 'Outside the window.'],
         ['no', 'Blank end dates', 'No recorded end date is not an expiring contract.'],
         ['no', 'Other schools', 'Scoped by <code>e.organization</code>.']
       ],
       tables: PEOPLE_TABLES('expiring-contracts'),
       filters: [
         { sql: 'e.organization = ?', plain: 'School scope.' },
-        WINDOW_RULE,
+        WINDOW_RULE(CONTRACT_WINDOW_DAYS),
         { sql: 'COUNT(DISTINCT e.person_id)', plain: 'One person with several contract rows counts once.' }
       ],
       countSql: CONTRACT_COUNT,
       rowsSql: CONTRACT_ROWS,
-      caveat: peopleCaveat('<code>contract_end</code> is treated as authoritative'),
+      caveat: peopleCaveat('<code>contract_end</code> is treated as authoritative', CONTRACT_WINDOW_DAYS),
       showCats: false
     }
   };
