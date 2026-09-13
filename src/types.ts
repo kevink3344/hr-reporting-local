@@ -638,3 +638,70 @@ export type SchoolKpiRows = {
   posNames: string[];
   rows: KpiPositionRow[];
 };
+
+// ---- Advanced Search ----
+//
+// A structured position search. Deliberately NOT OpenPositionRow: that type is
+// the Open Positions API response and carries no contractStart/contractType, so
+// widening it would change an existing contract.
+
+export type AdvancedSearchPositionType = 'all' | 'filled' | 'vacant';
+
+export type AdvancedSearchFilters = {
+  organization: string;
+  positionName?: string;
+  positionType: AdvancedSearchPositionType;
+  contractTypes: string[];
+  contractCode?: string;
+  contractStart?: string;
+  contractEnd?: string;
+  /** `position_info.pos_start` — seat-owned, so it also applies to vacant rows. */
+  positionStart?: string;
+  /** `employee_info.assign_start` — incumbent-owned, so dropped for vacant rows. */
+  personStart?: string;
+};
+
+/**
+ * One result row, keyed by display header so the client's sort/hide/export
+ * machinery (reportViews/reportExport/reportPdf) consumes it unchanged.
+ * `Vacant` is true when no incumbent occupies the position -- vacant rows carry
+ * no employee number, no contract type, no TAP and no contract dates.
+ *
+ * `Position Start` is the seat's own start date and survives on a vacant row;
+ * `Person Start` is the incumbent's current assignment start and does not.
+ */
+export type AdvancedSearchRow = {
+  Name: string;
+  'Emp No.': string;
+  Organization: string;
+  'Position Name': string;
+  'Pos No': string;
+  'Contract Type': string;
+  TAP: string;
+  'Position Start': string;
+  'Person Start': string;
+  'Cont Start': string;
+  'Cont End': string;
+  Vacant: boolean;
+};
+
+export type AdvancedSearchResult = {
+  organization: string;
+  columns: string[];
+  rows: AdvancedSearchRow[];
+  total: number;
+  truncated: boolean;
+  filters: AdvancedSearchFilters;
+};
+
+export type ContractTypeOption = {
+  code: string;
+  description: string;
+  count: number;
+};
+
+export type AdvancedSearchOptions = {
+  positionNames: string[];
+  contractTypes: ContractTypeOption[];
+  contractCodes: string[];
+};

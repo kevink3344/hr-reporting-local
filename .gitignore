@@ -16,5 +16,10 @@ trace*.mjs
 audit-dark.mjs
 test-*.mjs
 
+# System Information baseline: written by the server at runtime, so it reflects
+# whatever the reporting database held the last time an admin opened the page.
+# Committing it would ship one machine's stale row counts as everyone's baseline.
+docs/data/daily-refresh/system-info-snapshot.json
+
 # Local editor config
 .vscode/

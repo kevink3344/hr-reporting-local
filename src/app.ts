@@ -23,6 +23,8 @@ import { openApiDocument } from './openapi.js';
 import { viewDefinitionSchema } from './report-views.js';
 import { reportHighlightRulesSchema } from './report-highlight.js';
 import { validateSubreportSql } from './reports-sql.js';
+import { normalizeAdvancedSearchFilters } from './advanced-search.js';
+import { baselineFor, buildSystemInfo, readSnapshot, recordReading, stripImplausibleCounts, tablesFromReadings, writeSnapshot, SNAPSHOT_VERSION, type SnapshotReading } from './system-info.js';
 import {
   CERT_EXPIRY_WINDOW_DAYS,
   CONTRACT_EXPIRY_WINDOW_DAYS,
@@ -287,6 +289,24 @@ async function requireStyleConfigurationEnabled(repositories: Repositories): Pro
   return { enabled: true };
 }
 
+/** Feature gate for the admin System Information page. Null when the flag is off. */
+async function requireSystemInfoEnabled(repositories: Repositories): Promise<{ enabled: boolean } | null> {
+  const flag = await repositories.featureFlags.get('system_info');
+  if (!flag?.enabled) return null;
+  return { enabled: true };
+}
+
+/** Which backing store a repository set came from. Reported by /api/health. */
+function dataSourceNameFor(repositories: Repositories): string {
+  return repositories === mysqlRepositories
+    ? 'mysql'
+    : repositories === tursoRepositories
+      ? 'turso'
+      : repositories === hybridRepositories
+        ? 'hybrid'
+        : 'fixtures';
+}
+
 /**
  * True when the error means the table isn't usable yet — either it doesn't
  * exist (MySQL 1146 / SQLite "no such table") or the app user has no grants
@@ -460,6 +480,25 @@ const featureFlagPatchSchema = z.object({
   enabled: z.boolean()
 });
 
+// ---- Advanced Search ----
+// Every predicate is server-built from these fields and every value is bound,
+// so the body is validated for shape only -- there is no SQL to inject.
+const advancedSearchSchema = z.object({
+  organization: z.string().trim().min(1),
+  positionName: z.string().trim().optional(),
+  positionType: z.enum(['all', 'filled', 'vacant']).optional(),
+  contractTypes: z.array(z.string().trim()).optional(),
+  contractCode: z.string().trim().optional(),
+  contractStart: z.string().trim().optional(),
+  contractEnd: z.string().trim().optional(),
+  positionStart: z.string().trim().optional(),
+  personStart: z.string().trim().optional()
+});
+
+const advancedSearchOptionsQuerySchema = z.object({
+  organization: z.string().trim().min(1)
+});
+
 // ---- Style Configuration ----
 // A style theme is a named CSS style staff can apply. mainFont drives body +
 // headings; monoFont drives numbers/codes. Colors are hex strings.
@@ -513,14 +552,7 @@ export function createApp(
   });
 
   application.get('/api/health', async (_request, response) => {
-    const dataSource =
-      repositories === mysqlRepositories
-        ? 'mysql'
-        : repositories === tursoRepositories
-          ? 'turso'
-          : repositories === hybridRepositories
-            ? 'hybrid'
-            : 'fixtures';
+    const dataSource = dataSourceNameFor(repositories);
     // Hybrid needs BOTH its MySQL data side AND its Turso config side ready.
     // Report ready only when they are, so the client's warming banner clears
     // at the right moment.
@@ -1676,29 +1708,91 @@ export function createApp(
     }
   });
 
+  // ---- Advanced Search ----
+  // Structured, parameterised position search. Reads are open to every
+  // authenticated caller but the organization must be visible to them; the
+  // feature flag only controls whether the client surfaces the page.
+  //
+  // Advanced Search keys on the school NAME, because that is the column the
+  // reporting database carries and the value the page sends. The scope headers,
+  // however, carry school IDs — so a name has to be resolved before the usual
+  // `orgIsVisible` check can decide. Without the fallback a restricted user
+  // would be forbidden from searching their own school.
+  async function orgNameIsVisible(request: express.Request, organizationName: string): Promise<boolean> {
+    if (orgIsVisible(request, organizationName)) return true;
+    if (canViewAllSchools(request) || !hasSchoolScope(request)) return true;
+    const schools = await repositories.schools.list().catch(() => []);
+    const match = schools.find((school) => school.name === organizationName);
+    return match ? callerSchoolIds(request).includes(match.id) : false;
+  }
+
+  application.post('/api/advanced-search', async (request, response, next) => {
+    try {
+      const filters = normalizeAdvancedSearchFilters(advancedSearchSchema.parse(request.body));
+      if (!(await orgNameIsVisible(request, filters.organization))) {
+        response.status(403).json({ error: 'ORGANIZATION_FORBIDDEN' });
+        return;
+      }
+      response.json(await repositories.advancedSearch.search(filters));
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.get('/api/advanced-search/options', async (request, response, next) => {
+    try {
+      const { organization } = advancedSearchOptionsQuerySchema.parse(request.query);
+      if (!(await orgNameIsVisible(request, organization))) {
+        response.status(403).json({ error: 'ORGANIZATION_FORBIDDEN' });
+        return;
+      }
+      response.json(await repositories.advancedSearch.searchOptions(organization));
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
   // ---- Feature flags (Settings toggle) ----
   // Any authenticated user reads the toggle so the client can hide the UI;
   // only an admin may change it. Returns every known flag so the client can
   // gate all optional features in one call.
   application.get('/api/feature-flags', async (_request, response, next) => {
     try {
-      const [futurePositions, autoLookup, aiAssistant, styleConfiguration, kpiDashboard] = await Promise.all([
+      const [futurePositions, autoLookup, aiAssistant, styleConfiguration, kpiDashboard, systemMessages, systemInfo, advancedSearch] = await Promise.all([
         repositories.featureFlags.get('future_positions'),
         repositories.featureFlags.get('employee_auto_lookup'),
         repositories.featureFlags.get('ai_assistant'),
         repositories.featureFlags.get('style_configuration'),
-        repositories.featureFlags.get('kpi_dashboard')
+        repositories.featureFlags.get('kpi_dashboard'),
+        repositories.featureFlags.get('system_messages'),
+        repositories.featureFlags.get('system_info'),
+        repositories.featureFlags.get('advanced_search')
       ]);
       response.json({
         future_positions: futurePositions?.enabled ?? false,
         employee_auto_lookup: autoLookup?.enabled ?? false,
         ai_assistant: aiAssistant?.enabled ?? false,
         style_configuration: styleConfiguration?.enabled ?? false,
-        // Opt-OUT, unlike every other flag here. The KPI Dashboard is already
-        // live, so a missing row (or a database where the flag was never
-        // seeded) must leave it visible: an absent flag must never take a
-        // shipped page away from staff. Only an explicit `false` hides it.
-        kpi_dashboard: kpiDashboard?.enabled ?? true
+        // Opt-OUT, unlike the flags above. The KPI Dashboard is already live,
+        // so a missing row (or a database where the flag was never seeded) must
+        // leave it visible: an absent flag must never take a shipped page away
+        // from staff. Only an explicit `false` hides it.
+        kpi_dashboard: kpiDashboard?.enabled ?? true,
+        // Opt-OUT for the same reason: System-wide messages are already in use
+        // to announce work in progress, so an unseeded row must keep the manager
+        // reachable and existing announcements on screen. Only an explicit
+        // `false` turns it off.
+        system_messages: systemMessages?.enabled ?? true,
+        // Opt-IN: System Information is a beta admin diagnostic, so it ships
+        // hidden and an unseeded row leaves it hidden.
+        system_info: systemInfo?.enabled ?? false,
+        // Opt-IN, like System Information. Advanced Search is a new read surface
+        // over the position data, so it stays hidden until an admin turns it on.
+        advanced_search: advancedSearch?.enabled ?? false
       });
     } catch (error) {
       const mapped = repoErrorToStatus(error);
@@ -1710,13 +1804,87 @@ export function createApp(
   application.patch('/api/feature-flags/:key', requireAdmin, async (request, response, next) => {
     try {
       const key = routeId(request.params.key);
-      if (key !== 'future_positions' && key !== 'employee_auto_lookup' && key !== 'ai_assistant' && key !== 'style_configuration' && key !== 'kpi_dashboard') {
+      if (key !== 'future_positions' && key !== 'employee_auto_lookup' && key !== 'ai_assistant' && key !== 'style_configuration' && key !== 'kpi_dashboard' && key !== 'system_messages' && key !== 'system_info' && key !== 'advanced_search') {
         response.status(404).json({ error: 'FEATURE_NOT_FOUND' });
         return;
       }
       const patch = featureFlagPatchSchema.parse(request.body);
       const flag = await repositories.featureFlags.set(key, patch.enabled, callerId(request));
       response.json(flag);
+    } catch (error) {
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  // ---- System information (admin diagnostics) ----
+  // The reporting database keeps NO history — no load timestamp, no audit
+  // table, no auto_increment to diff — so this app keeps its own baseline in a
+  // small JSON file it writes itself (see src/system-info.ts). Each request
+  // measures the live tables, compares them with the newest reading taken on a
+  // previous day, and records today's reading once.
+  //
+  // Admin-only, and additionally gated by the system_info feature flag so the
+  // page is off until an admin turns it on.
+  application.get('/api/system-info', requireAdmin, async (_request, response, next) => {
+    try {
+      const gate = await requireSystemInfoEnabled(repositories);
+      if (!gate) { response.status(403).json({ error: 'FEATURE_DISABLED' }); return; }
+
+      const stored = readSnapshot();
+      // The snapshot names its own tables, so ask for the union of what it
+      // already recorded and the known reporting tables.
+      const measured = await repositories.systemInfo.snapshot(tablesFromReadings(stored.data.readings));
+      const generatedAt = new Date().toISOString();
+      const dataSource = dataSourceNameFor(repositories);
+
+      // Only a real measurement is worth remembering. On a fixtures/Turso
+      // source there is nothing to measure, and recording an empty reading
+      // would destroy the baseline for every later day.
+      let readings = stored.data.readings;
+      let recordedNow = false;
+      // What is stored must also be plausible: a table that read 0 today but was
+      // populated in the last reading is a probe that never answered, so it is
+      // left out of the reading rather than becoming a fake −100% baseline.
+      const countsToRecord = stripImplausibleCounts(measured.counts, baselineFor(readings, generatedAt));
+      if (Object.keys(countsToRecord).length > 0) {
+        const current: SnapshotReading = {
+          takenAt: generatedAt,
+          source: dataSource,
+          counts: countsToRecord,
+          checksums: measured.checksums,
+          dataAsOf: measured.asOf
+        };
+        const recorded = recordReading(readings, current);
+        readings = recorded.readings;
+        recordedNow = recorded.recorded;
+        if (recordedNow) {
+          const written = writeSnapshot({ version: SNAPSHOT_VERSION, readings });
+          if (!written.ok) {
+            // A read-only deployment still gets the page; it just cannot
+            // remember today, so say so rather than claiming a reading exists.
+            recordedNow = false;
+            console.warn(`system-info: could not write ${stored.file}: ${written.error}`);
+          }
+        }
+      }
+
+      response.json(
+        buildSystemInfo({
+          generatedAt,
+          dataSource,
+          // Report the repo-relative path, never the absolute one, so the API
+          // does not leak the server's filesystem layout.
+          snapshotFile: stored.file,
+          snapshotError: stored.error,
+          recordedNow,
+          readings,
+          counts: measured.counts,
+          checksums: measured.checksums,
+          dataAsOf: measured.asOf
+        })
+      );
     } catch (error) {
       const mapped = repoErrorToStatus(error);
       if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }

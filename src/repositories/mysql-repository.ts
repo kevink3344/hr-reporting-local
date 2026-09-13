@@ -1,10 +1,21 @@
 import type { GenericReportRow, GenericReportRowWithSubreport, GenericReportRun, OpenPositionRow, Person, PersonRecord, PositionDetails, School, ReportDefinition, ReportSection, ReportView, ReportViewComment, ReportViewInvite, PositionPin, PositionComment, SystemMessage, SystemMessageType, SystemUser, FuturePosition, ViewDefinition } from '../types.js';
 import type { Repositories, StyleTheme, PositionSearchFilter, PositionSearchHit } from './contracts.js';
-import { query } from '../db.js';
+import { query, queryWithDeadline } from '../db.js';
 import { REPORT_ROW_CAP, bindNamedParam, bindOrganization, validateReportSql, validateSubreportSql, newId, nowIso } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
+import type { AdvancedSearchFilters, AdvancedSearchOptions, AdvancedSearchResult } from '../types.js';
 import { viewDefinitionSchema } from '../report-views.js';
 import { mysqlSchoolKpiRepository } from './mysql-kpi-repository.js';
+import {
+  buildAdvancedSearchOptionQueries,
+  buildAdvancedSearchResult,
+  buildAdvancedSearchSql,
+  toAdvancedSearchOptions,
+  toAdvancedSearchSourceRow,
+  toContractTypeOption,
+  type AdvancedSearchSqlRow,
+  type ContractTypeSqlRow
+} from '../advanced-search.js';
 
 // Legacy open_pos_read.inc — the live MySQL variant. Uses CONCAT/IFNULL/NOW()
 // and casts the cross-type joins (pos_number, person_id) to make the link.
@@ -230,6 +241,36 @@ async function getPositionDetails(posNumber: string, organization: string): Prom
   const rows = await query<PositionDetailSqlRow>(POSITION_DETAIL_SQL, [posNumber, organization]);
   const row = rows[0];
   return row ? toPositionDetails(row) : null;
+}
+
+// ---- Advanced Search ------------------------------------------------------
+// Shares the predicate vocabulary and row shaping with the fixture impl via
+// ../advanced-search.js. position_info.pos_number is INT while
+// employee_info.pos_number is varchar, so the 'mysql' dialect casts with
+// UNSIGNED (MySQL/MariaDB has no `CAST(x AS INTEGER)`).
+
+type AdvancedSearchPositionNameRow = { pos_name: string | null };
+type AdvancedSearchTenureCodeRow = { tenure_code: string | null };
+
+async function advancedSearch(filters: AdvancedSearchFilters): Promise<AdvancedSearchResult> {
+  const { text, params } = buildAdvancedSearchSql(filters, 'mysql');
+  const rows = await query<AdvancedSearchSqlRow>(text, params);
+  return buildAdvancedSearchResult(filters.organization, filters, rows.map(toAdvancedSearchSourceRow));
+}
+
+async function advancedSearchOptions(organization: string): Promise<AdvancedSearchOptions> {
+  const queries = buildAdvancedSearchOptionQueries(organization, 'mysql');
+  const [names, types, codes] = await Promise.all([
+    query<AdvancedSearchPositionNameRow>(queries.positionNames.text, queries.positionNames.params),
+    query<ContractTypeSqlRow>(queries.contractTypes.text, queries.contractTypes.params),
+    query<AdvancedSearchTenureCodeRow>(queries.contractCodes.text, queries.contractCodes.params)
+  ]);
+
+  return toAdvancedSearchOptions({
+    positionNames: names.map((row) => row.pos_name ?? ''),
+    contractTypes: types.map(toContractTypeOption),
+    contractCodes: codes.map((row) => row.tenure_code ?? '')
+  });
 }
 
 // Directory position search — NUMBER ONLY. Matches on `pos_number` and returns
@@ -915,6 +956,7 @@ export const mysqlRepositories: Repositories = {
   },
   reports: { openPositions },
   positions: { getPositionDetails, search: searchPositions },
+  advancedSearch: { search: advancedSearch, searchOptions: advancedSearchOptions },
   // The clickable KPI dashboard. Its SQL lives in its own module so the
   // verified OPEN_POSITIONS_SQL above stays untouched.
   schoolKpi: mysqlSchoolKpiRepository,
@@ -1963,6 +2005,58 @@ export const mysqlRepositories: Repositories = {
       if (!rows[0]) return false;
       await query('DELETE FROM ask_history WHERE id = ?', [id]);
       return true;
+    }
+  },
+  // Live row counts for the nightly-refreshed reporting tables. Read-only; the
+  // System Information page compares these against the reading the server
+  // recorded itself, because the reporting database keeps no load history.
+  systemInfo: {
+    async snapshot(tables) {
+      const counts: Record<string, number> = {};
+      const checksums: Record<string, number> = {};
+      for (const table of tables) {
+        // Table names come from the recorded snapshot, but only ever interpolate
+        // a plain identifier — never a bound parameter, since identifiers can't
+        // be parameterised in MySQL.
+        if (!/^[A-Za-z0-9_]+$/.test(table)) continue;
+        try {
+          // Bounded, so a table someone else has locked reports as unreadable
+          // instead of hanging the page (see queryWithDeadline).
+          const rows = await queryWithDeadline<{ n: number | string | null }>(`SELECT COUNT(*) AS n FROM \`${table}\``);
+          const value = Number(rows[0]?.n);
+          // A count is only recorded when it is the answer to a real query. An
+          // empty result set (a statement abandoned server-side) drops through
+          // here as NaN, and storing that as 0 would invent "the table is empty"
+          // and flag a −100% swing on the page.
+          if (Number.isFinite(value)) counts[table] = value;
+        } catch {
+          // Missing table, no grant, or a lock we gave up on: omit it rather
+          // than fail the whole page.
+        }
+        try {
+          // One integer for the whole table, changing iff any row changes, so it
+          // separates "rows were added" from "the table was reloaded with the
+          // same number of different rows" — the normal case for a full nightly
+          // reload. ~150ms per table and permitted with the reporting grant.
+          const rows = await queryWithDeadline<Record<string, unknown>>(`CHECKSUM TABLE \`${table}\``);
+          const value = Number(rows[0]?.Checksum);
+          if (Number.isFinite(value)) checksums[table] = value;
+        } catch {
+          // CHECKSUM TABLE unavailable: the count still stands on its own.
+        }
+      }
+      let asOf: string | null = null;
+      try {
+        // CAST to CHAR so the zero-date sentinel ('0000-00-00') survives as a
+        // string instead of turning into an Invalid Date and serialising null.
+        const rows = await queryWithDeadline<{ d: string | null }>(
+          'SELECT CAST(MAX(last_change) AS CHAR) AS d FROM employee_info'
+        );
+        asOf = rows[0]?.d ?? null;
+      } catch {
+        asOf = null;
+      }
+      return { counts, checksums, asOf };
     }
   }
 };

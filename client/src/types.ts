@@ -499,14 +499,20 @@ export type FeatureFlag = {
 // GET /api/feature-flags now returns a map of every known flag.
 // employee_auto_lookup is a sub-feature of future_positions: the Future
 // Positions beta can be on while employee auto-lookup stays off.
-// kpi_dashboard is the one opt-out flag: the server reports `true` when the row
-// is missing, so an unseeded flag cannot hide the already-live dashboard.
+// kpi_dashboard and system_messages are the two opt-out flags: the server
+// reports `true` for them when the row is missing, so an unseeded flag cannot
+// hide a feature that is already live.
+// system_info (the admin System Information page) is opt-IN and ships hidden,
+// because it is a beta diagnostic rather than a feature staff rely on.
 export type FeatureFlagsResponse = {
   future_positions: boolean;
   ai_assistant: boolean;
   employee_auto_lookup: boolean;
   style_configuration: boolean;
   kpi_dashboard: boolean;
+  system_messages: boolean;
+  system_info: boolean;
+  advanced_search: boolean;
 };
 
 // The flag keys PATCH /api/feature-flags/:key accepts. Both admin pages use this
@@ -517,7 +523,10 @@ export const FEATURE_FLAG_KEYS = [
   'employee_auto_lookup',
   'ai_assistant',
   'style_configuration',
-  'kpi_dashboard'
+  'kpi_dashboard',
+  'system_messages',
+  'system_info',
+  'advanced_search'
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -525,6 +534,44 @@ export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 export function isFeatureFlagKey(key: string): key is FeatureFlagKey {
   return (FEATURE_FLAG_KEYS as readonly string[]).includes(key);
 }
+
+// ---- System Information (admin diagnostics) ----
+// Mirrors GET /api/system-info. The reporting database keeps no history, so the
+// server records its own baseline: one SnapshotReading per day the page was
+// opened, and `rows` compares the newest previous-day reading with the live
+// row counts.
+export type SnapshotReading = {
+  takenAt: string;
+  source: string;
+  counts: Record<string, number>;
+  /** `CHECKSUM TABLE` per table; empty when the source cannot checksum. */
+  checksums: Record<string, number>;
+  dataAsOf: string | null;
+};
+
+export type SystemInfoRow = {
+  table: string;
+  baselineCount: number | null;
+  liveCount: number | null;
+  delta: number | null;
+  deltaPct: number | null;
+  /** True when the rows differ from the baseline, even at the same count. */
+  contentChanged: boolean | null;
+};
+
+export type SystemInfoPayload = {
+  generatedAt: string;
+  dataSource: string;
+  snapshotFile: string;
+  snapshotError: string | null;
+  /** True when THIS request was the first of the day and recorded a reading. */
+  recordedNow: boolean;
+  readings: SnapshotReading[];
+  baseline: SnapshotReading | null;
+  rows: SystemInfoRow[];
+  dataAsOf: string | null;
+  liveCountsAvailable: boolean;
+};
 
 // ---- Style Configuration ----
 // A named CSS style staff can apply. The built-in "default" style is implicit
@@ -761,4 +808,61 @@ export type KpiTarget = {
   q: string;
   schoolId: string;
   schoolName: string;
+};
+
+// ---- Advanced Search ----
+export type AdvancedSearchPositionType = 'all' | 'filled' | 'vacant';
+
+export type AdvancedSearchFilters = {
+  organization: string;
+  positionName?: string;
+  positionType: AdvancedSearchPositionType;
+  contractTypes: string[];
+  contractCode?: string;
+  contractStart?: string;
+  contractEnd?: string;
+  /** `position_info.pos_start` — seat-owned, so it also applies to vacant rows. */
+  positionStart?: string;
+  /** `employee_info.assign_start` — incumbent-owned, so dropped for vacant rows. */
+  personStart?: string;
+};
+
+/**
+ * Keyed by the display header so the shared sort / hide / export machinery can
+ * consume it unchanged. `Vacant` is metadata (drives the badge in the Name
+ * cell) and is not one of the `columns`.
+ *
+ * `Position Start` is the seat's own start date and survives on a vacant row;
+ * `Person Start` is the incumbent's current assignment start and does not.
+ */
+export type AdvancedSearchRow = {
+  Name: string;
+  'Emp No.': string;
+  Organization: string;
+  'Position Name': string;
+  'Pos No': string;
+  'Contract Type': string;
+  TAP: string;
+  'Position Start': string;
+  'Person Start': string;
+  'Cont Start': string;
+  'Cont End': string;
+  Vacant: boolean;
+};
+
+export type AdvancedSearchResult = {
+  organization: string;
+  columns: string[];
+  rows: AdvancedSearchRow[];
+  total: number;
+  truncated: boolean;
+  filters: AdvancedSearchFilters;
+};
+
+export type ContractTypeOption = { code: string; description: string; count: number };
+
+export type AdvancedSearchOptions = {
+  positionNames: string[];
+  contractTypes: ContractTypeOption[];
+  contractCodes: string[];
 };

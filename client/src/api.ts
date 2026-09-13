@@ -19,6 +19,7 @@ import type {
   ReportViewComment,
   ReportViewInvite,
   School,
+  SystemInfoPayload,
   SystemMessage,
   SystemMessageType,
   SystemUser,
@@ -35,6 +36,9 @@ import type {
   KpiMetricKey,
   SchoolKpiPayload,
   SchoolKpiRows,
+  AdvancedSearchFilters,
+  AdvancedSearchOptions,
+  AdvancedSearchResult,
 } from './types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -550,6 +554,24 @@ export function setFeatureFlag(session: LoginSession, key: string, enabled: bool
   });
 }
 
+// ---- System Information (admin diagnostics) ----
+// Admin-only and flag-gated: the server answers 403 FORBIDDEN without the
+// admin role and 403 FEATURE_DISABLED while the system_info flag is off.
+//
+// This endpoint measures every reporting table live, so a slow or blocked table
+// can make it take a while. Bound it anyway: without an upper limit the page
+// spins on its loading state with nothing to tell the administrator, which is
+// exactly what a table locked by a long-running reader looks like from here.
+export function getSystemInfo(
+  session: LoginSession | null | undefined,
+  timeoutMs = 60_000
+): Promise<SystemInfoPayload> {
+  return request<SystemInfoPayload>('/api/system-info', {
+    headers: adminHeaders(session),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+}
+
 // ---- Style Configuration ----
 // Reads are available to any signed-in user (so staff can apply a style);
 // writes require an admin.
@@ -677,5 +699,30 @@ export function completeFuturePosition(session: LoginSession, id: string): Promi
   return request<FuturePosition>(`/api/future-positions/${encodeURIComponent(id)}/complete`, {
     method: 'POST',
     headers: adminHeaders(session)
+  });
+}
+
+// ---- Advanced Search ----
+// Every predicate is built and bound server-side — the client only ever sends
+// structured filters.
+export function runAdvancedSearch(
+  session: LoginSession | null | undefined,
+  filters: AdvancedSearchFilters
+): Promise<AdvancedSearchResult> {
+  return request<AdvancedSearchResult>('/api/advanced-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...scopeHeaders(session) },
+    body: JSON.stringify(filters)
+  });
+}
+
+/** DISTINCT position names, contract types and contract codes for one school. */
+export function getAdvancedSearchOptions(
+  session: LoginSession | null | undefined,
+  organization: string
+): Promise<AdvancedSearchOptions> {
+  const params = new URLSearchParams({ organization });
+  return request<AdvancedSearchOptions>(`/api/advanced-search/options?${params.toString()}`, {
+    headers: scopeHeaders(session)
   });
 }

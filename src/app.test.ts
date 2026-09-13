@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from './app.js';
@@ -15,6 +16,13 @@ import {
   getKpiMetric
 } from './kpi-definitions.js';
 import type { KpiFacet, KpiMetricKey, SchoolKpiPayload, SchoolKpiRows } from './types.js';
+import type { SystemInfoPayload } from './system-info.js';
+import {
+  ADVANCED_SEARCH_ROW_CAP,
+  buildAdvancedSearchOptionQueries,
+  buildAdvancedSearchSql,
+  normalizeAdvancedSearchFilters
+} from './advanced-search.js';
 
 describe('HR Reporting API foundation', () => {
   let server: Server;
@@ -226,6 +234,13 @@ describe('HR Reporting API foundation', () => {
     expect(docsResponse.status).toBe(200);
     expect(document.openapi).toBe('3.1.0');
     expect(document.paths['/people']).toBeDefined();
+    // The admin data-load diagnostics are documented alongside the data routes,
+    // including the shape of the recorded-baseline / live-count payload.
+    expect(document.paths['/system-info'].get.operationId).toBe('getSystemInfo');
+    expect(document.paths['/system-info'].get.tags).toContain('Admin');
+    expect(document.components.schemas.SystemInfoPayload).toBeDefined();
+    expect(document.components.schemas.SystemInfoRow).toBeDefined();
+    expect(document.components.schemas.SnapshotReading).toBeDefined();
   });
 });
 
@@ -250,14 +265,55 @@ describe('Feature flags', () => {
     const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
     expect(response.status).toBe(200);
     const flags = await response.json();
-    expect(Object.keys(flags).sort()).toEqual(['ai_assistant', 'employee_auto_lookup', 'future_positions', 'kpi_dashboard', 'style_configuration']);
+    expect(Object.keys(flags).sort()).toEqual(['advanced_search', 'ai_assistant', 'employee_auto_lookup', 'future_positions', 'kpi_dashboard', 'style_configuration', 'system_info', 'system_messages']);
+  });
+
+  it('defaults advanced_search to off so the new page ships hidden', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ advanced_search: false });
+  });
+
+  it('toggles advanced_search without disturbing the other flags', async () => {
+    const before = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+
+    const on = await fetch(`${baseUrl}/api/feature-flags/advanced_search`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    expect(on.status).toBe(200);
+    expect(await on.json()).toMatchObject({ key: 'advanced_search', enabled: true });
+
+    const after = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+    expect(after.advanced_search).toBe(true);
+    for (const key of Object.keys(before)) {
+      if (key === 'advanced_search') continue;
+      expect(after[key]).toBe(before[key]);
+    }
+
+    // Leave it as it was found: later suites assert the shipping default.
+    await fetch(`${baseUrl}/api/feature-flags/advanced_search`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    });
+  });
+
+  it('refuses an advanced_search change from a non-admin', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags/advanced_search`, {
+      method: 'PATCH',
+      headers: { 'x-user-roles': 'school_staff', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    expect(response.status).toBe(403);
   });
 
   it('defaults kpi_dashboard to on because the dashboard is already live', async () => {
     const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
     expect(response.status).toBe(200);
     const flags = await response.json();
-    // The only opt-out flag: an unseeded database must not hide a shipped page.
+    // An opt-out flag: an unseeded database must not hide a shipped page.
     expect(flags.kpi_dashboard).toBe(true);
   });
 
@@ -282,6 +338,32 @@ describe('Feature flags', () => {
     expect(await response.json()).toMatchObject({ style_configuration: false });
   });
 
+  it('defaults system_messages to on because the manager is already in use', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
+    expect(await response.json()).toMatchObject({ system_messages: true });
+  });
+
+  it('turns system_messages off without disturbing the other flags', async () => {
+    const before = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+
+    const off = await fetch(`${baseUrl}/api/feature-flags/system_messages`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ key: 'system_messages', enabled: false });
+
+    const after = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+    expect(after.system_messages).toBe(false);
+    // Only the requested key moves; every other flag keeps whatever value it
+    // had, so this stays true no matter which tests ran before it.
+    for (const key of Object.keys(before)) {
+      if (key === 'system_messages') continue;
+      expect(after[key]).toBe(before[key]);
+    }
+  });
+
   it('toggles style_configuration independently of the other flags', async () => {
     const on = await fetch(`${baseUrl}/api/feature-flags/style_configuration`, {
       method: 'PATCH',
@@ -299,6 +381,32 @@ describe('Feature flags', () => {
   it('defaults employee_auto_lookup to off so the beta can ship without it', async () => {
     const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
     expect(await response.json()).toMatchObject({ employee_auto_lookup: false });
+  });
+
+  it('defaults system_info to off so the admin diagnostic ships hidden', async () => {
+    const response = await fetch(`${baseUrl}/api/feature-flags`, { headers: admin });
+    expect(await response.json()).toMatchObject({ system_info: false });
+  });
+
+  it('turns system_info off without disturbing the other flags', async () => {
+    const before = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+
+    const off = await fetch(`${baseUrl}/api/feature-flags/system_info`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ key: 'system_info', enabled: false });
+
+    const after = await (await fetch(`${baseUrl}/api/feature-flags`, { headers: admin })).json();
+    expect(after.system_info).toBe(false);
+    // The page is a diagnostic for one admin view, so it must never be able to
+    // take another feature down with it.
+    for (const key of Object.keys(before)) {
+      if (key === 'system_info') continue;
+      expect(after[key]).toBe(before[key]);
+    }
   });
 
   it('toggles employee_auto_lookup independently of future_positions', async () => {
@@ -333,6 +441,123 @@ describe('Feature flags', () => {
       body: JSON.stringify({ enabled: true })
     });
     expect(response.status).toBe(403);
+  });
+});
+
+describe('System Information (admin diagnostics)', () => {
+  let server: Server;
+  let baseUrl: string;
+  let snapshotDir: string;
+  let snapshotFile: string;
+  const admin = { 'x-user-roles': 'hr_admin', 'x-user-id': 'user-001' };
+
+  beforeEach(async () => {
+    // The server owns a JSON snapshot in the repo. Point it at a scratch file
+    // per test so the committed snapshot is never read or written here.
+    snapshotDir = mkdtempSync(join(tmpdir(), 'sysinfo-'));
+    snapshotFile = join(snapshotDir, 'system-info-snapshot.json');
+    process.env.SYSTEM_INFO_SNAPSHOT = snapshotFile;
+
+    server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    delete process.env.SYSTEM_INFO_SNAPSHOT;
+    rmSync(snapshotDir, { recursive: true, force: true });
+  });
+
+  async function setFlag(enabled: boolean) {
+    const response = await fetch(`${baseUrl}/api/feature-flags/system_info`, {
+      method: 'PATCH',
+      headers: { ...admin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    });
+    expect(response.status).toBe(200);
+  }
+
+  it('refuses a non-admin before it looks at the feature flag', async () => {
+    const response = await fetch(`${baseUrl}/api/system-info`, {
+      headers: { 'x-user-roles': 'school_staff' }
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'FORBIDDEN' });
+  });
+
+  it('reports FEATURE_DISABLED while the flag is off', async () => {
+    await setFlag(false);
+    const response = await fetch(`${baseUrl}/api/system-info`, { headers: admin });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'FEATURE_DISABLED' });
+  });
+
+  it('reports every reporting table and records nothing when the source has no reporting data', async () => {
+    await setFlag(true);
+    const response = await fetch(`${baseUrl}/api/system-info`, { headers: admin });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as SystemInfoPayload;
+
+    expect(body.dataSource).toBe('fixtures');
+    expect(body.snapshotFile).toMatch(/system-info-snapshot\.json$/);
+    expect(body.snapshotError).toBeNull();
+    // One row per table the nightly load writes, from the module's fixed list —
+    // not from whatever the snapshot happens to hold.
+    expect(body.rows).toHaveLength(12);
+    const tables = body.rows.map((row) => row.table);
+    for (const expected of ['employee_info', 'employee_info_future', 'position_info', 'leaves', 'mentor']) {
+      expect(tables).toContain(expected);
+    }
+
+    // Fixtures hold no reporting database, so the comparison must degrade to
+    // "not measured" rather than inventing a plausible-looking count.
+    expect(body.liveCountsAvailable).toBe(false);
+    for (const row of body.rows) {
+      expect(row.baselineCount).toBeNull();
+      expect(row.liveCount).toBeNull();
+      expect(row.delta).toBeNull();
+      expect(row.deltaPct).toBeNull();
+      expect(row.contentChanged).toBeNull();
+    }
+
+    // First day, nothing to compare against — and crucially an empty
+    // measurement must NOT be written down, or every later day would compare
+    // against zeros.
+    expect(body.recordedNow).toBe(false);
+    expect(body.readings).toEqual([]);
+    expect(body.baseline).toBeNull();
+    expect(existsSync(snapshotFile)).toBe(false);
+  });
+
+  it('measures against its own recorded snapshot from an earlier day', async () => {
+    await setFlag(true);
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    writeFileSync(snapshotFile, JSON.stringify({
+      version: 1,
+      readings: [{
+        takenAt: yesterday,
+        source: 'mysql',
+        counts: { employee_info: 22000, leaves: 165000 },
+        checksums: { employee_info: 1243186703, leaves: 1723242001 },
+        dataAsOf: '2026-09-11 00:00:00'
+      }]
+    }), 'utf8');
+
+    const body = (await (await fetch(`${baseUrl}/api/system-info`, { headers: admin })).json()) as SystemInfoPayload;
+
+    // The stored reading becomes the baseline and is echoed back to the page.
+    expect(body.baseline?.takenAt).toBe(yesterday);
+    expect(body.readings).toHaveLength(1);
+    const employee = body.rows.find((row) => row.table === 'employee_info');
+    expect(employee?.baselineCount).toBe(22000);
+    // The live side is still unmeasurable on fixtures, so the difference stays
+    // unknown rather than being reported as a 100% drop.
+    expect(employee?.liveCount).toBeNull();
+    expect(employee?.delta).toBeNull();
+    expect(body.recordedNow).toBe(false);
   });
 });
 
@@ -1029,5 +1254,370 @@ describe('Clickable KPI dashboard', () => {
         expect({ file: relative, primitive, hits: source.includes(primitive) }).toEqual({ file: relative, primitive, hits: false });
       }
     }
+  });
+});
+
+describe('Advanced Search API', () => {
+  let server: Server;
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+    baseUrl = `http://127.0.0.1:${address.port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  });
+
+  const search = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    fetch(`${baseUrl}/api/advanced-search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body)
+    });
+
+  const OAK = 'Test Oak Elementary';
+  const RIVER = 'Test River High';
+
+  it('returns every position in the school with the eleven display columns', async () => {
+    const response = await search({ organization: OAK });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.organization).toBe(OAK);
+    expect(body.columns).toEqual(['Name', 'Emp No.', 'Organization', 'Position Name', 'Pos No', 'Contract Type', 'TAP', 'Position Start', 'Person Start', 'Cont Start', 'Cont End']);
+    expect(body.total).toBe(7);
+    expect(body.truncated).toBe(false);
+    expect(body.rows.every((row: { Vacant: unknown }) => typeof row.Vacant === 'boolean')).toBe(true);
+    expect(body.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ Name: 'Example, Alex', 'Position Name': 'Teacher', 'Pos No': '1001' })
+    ]));
+  });
+
+  it('carries the contract type in the result set, and blanks it when vacant', async () => {
+    const body = await (await search({ organization: OAK })).json();
+    const byPos = new Map<string, { 'Contract Type': string; Vacant: boolean }>(
+      body.rows.map((row: { 'Pos No': string; 'Contract Type': string; Vacant: boolean }) => [row['Pos No'], row])
+    );
+    // The value is the same token the Contract Type filter matches on.
+    expect(byPos.get('1001')?.['Contract Type']).toBe('T');
+    expect(byPos.get('1003')?.['Contract Type']).toBe('NC');
+    // Vacant positions have no incumbent, therefore no contract type.
+    for (const row of body.rows) {
+      if (row.Vacant) expect(row['Contract Type']).toBe('');
+      else expect(row['Contract Type']).not.toBe('');
+    }
+  });
+
+  it('carries TAP in the result set, which is what reconciles it with the Contract Report', async () => {
+    const body = await (await search({ organization: OAK })).json();
+    const byPos = new Map<string, { TAP: string; Vacant: boolean }>(
+      body.rows.map((row: { 'Pos No': string; TAP: string; Vacant: boolean }) => [row['Pos No'], row])
+    );
+    // Full time reads 100 — the same convention as the Contract Report's
+    // ROUND(tap * 100).
+    expect(byPos.get('1001')?.TAP).toBe('100');
+    // Part time reads its own percentage. The Contract Report filters on
+    // `tap = 1`, so this row appears here but not there — exactly why the two
+    // screens reported 34 and 33 for the same population.
+    expect(byPos.get('1003')?.TAP).toBe('60');
+    // Among the filled Oak rows exactly one is part time, so a `tap = 1` filter
+    // would drop exactly that row: 5 filled rows here vs 4 there. (Vacant rows
+    // are blank, not 100, so they are excluded from the count.)
+    const filled = body.rows.filter((row: { Vacant: boolean }) => !row.Vacant);
+    expect(filled).toHaveLength(5);
+    expect(filled.filter((row: { TAP: string }) => row.TAP !== '100')).toHaveLength(1);
+    // Vacant positions have no incumbent, therefore no assignment to measure.
+    for (const row of body.rows) {
+      if (row.Vacant) expect(row.TAP).toBe('');
+      else expect(row.TAP).not.toBe('');
+    }
+  });
+
+  it('echoes the normalised filters that actually applied', async () => {
+    const body = await (await search({ organization: OAK, positionType: 'all', contractTypes: [], positionName: '  ' })).json();
+    expect(body.filters).toEqual({ organization: OAK, positionType: 'all', contractTypes: [] });
+  });
+
+  it('drops stale contract dates when Position Type is vacant', async () => {
+    const body = await (await search({
+      organization: OAK,
+      positionType: 'vacant',
+      contractStart: '2025-07-01',
+      contractEnd: '2026-06-30'
+    })).json();
+    // A replayed "recent search" could carry a date; it must not silently
+    // exclude every vacant row.
+    expect(body.filters).not.toHaveProperty('contractStart');
+    expect(body.filters).not.toHaveProperty('contractEnd');
+    expect(body.total).toBe(2);
+  });
+
+  it('drops the contract type filter when Position Type is vacant', async () => {
+    const body = await (await search({
+      organization: OAK,
+      positionType: 'vacant',
+      contractTypes: ['T']
+    })).json();
+    // A vacant row has no contract_type, so retaining the predicate would
+    // exclude every vacant row. Same reasoning as the dropped dates above.
+    expect(body.filters.contractTypes).toEqual([]);
+    expect(body.total).toBe(2);
+  });
+
+  it('keeps the Position Start filter when Position Type is vacant', async () => {
+    // Position Start is seat-owned, so unlike the contract dates it is NOT
+    // dropped: it is the only way to ask which empty seats open on a date.
+    const opening = await (await search({
+      organization: OAK,
+      positionType: 'vacant',
+      positionStart: '2025-07-01'
+    })).json();
+    expect(opening.filters.positionStart).toBe('2025-07-01');
+    expect(opening.total).toBe(2);
+
+    // And it genuinely filters rather than being ignored — both vacant Oak
+    // seats start 2025-07-01, so a 2024 date must return nothing.
+    const wrongYear = await (await search({
+      organization: OAK,
+      positionType: 'vacant',
+      positionStart: '2024-07-01'
+    })).json();
+    expect(wrongYear.total).toBe(0);
+  });
+
+  it('drops the Person Start filter when Position Type is vacant', async () => {
+    const body = await (await search({
+      organization: OAK,
+      positionType: 'vacant',
+      personStart: '2019-08-20'
+    })).json();
+    // Person Start is incumbent-owned. A vacant row has nobody to start, so
+    // keeping the predicate would exclude every vacant row — the same reason
+    // the contract dates are dropped.
+    expect(body.filters).not.toHaveProperty('personStart');
+    expect(body.total).toBe(2);
+  });
+
+  it('flags vacant rows and blanks their employee number and contract dates', async () => {
+    const body = await (await search({ organization: OAK, positionType: 'vacant' })).json();
+    expect(body.rows).toHaveLength(2);
+    for (const row of body.rows) {
+      expect(row.Vacant).toBe(true);
+      expect(row.Name).toBe('Vacant');
+      expect(row['Emp No.']).toBe('');
+      expect(row['Cont Start']).toBe('');
+      expect(row['Cont End']).toBe('');
+    }
+    expect(body.rows.map((row: { 'Position Name': string }) => row['Position Name']).sort())
+      .toEqual(['Assistant Principal', 'Counselor']);
+  });
+
+  it('flags filled rows and keeps their contract dates', async () => {
+    const body = await (await search({ organization: OAK, positionType: 'filled' })).json();
+    expect(body.total).toBe(5);
+    for (const row of body.rows) {
+      expect(row.Vacant).toBe(false);
+      expect(row.Name).not.toBe('Vacant');
+      expect(row['Emp No.']).not.toBe('');
+      expect(row['Cont Start']).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(row['Cont End']).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it('carries Position Start and Person Start as two independent dates', async () => {
+    const body = await (await search({ organization: OAK })).json();
+    const byPos = new Map<string, { 'Position Start': string; 'Person Start': string; Vacant: boolean }>(
+      body.rows.map((row: { 'Pos No': string; 'Position Start': string; 'Person Start': string; Vacant: boolean }) => [row['Pos No'], row])
+    );
+    // The seat was created 2025-07-01; this person's current assignment began
+    // 2025-08-15. Two different facts about the same row.
+    expect(byPos.get('1003')?.['Position Start']).toBe('2025-07-01');
+    expect(byPos.get('1003')?.['Person Start']).toBe('2025-08-15');
+    // Both columns are ISO text, so they sort lexicographically.
+    for (const row of body.rows) {
+      expect(row['Position Start']).toMatch(/^(\d{4}-\d{2}-\d{2})?$/);
+      expect(row['Person Start']).toMatch(/^(\d{4}-\d{2}-\d{2})?$/);
+    }
+  });
+
+  it('blanks the 1951-01-01 position-start placeholder rather than showing a 1951 date', async () => {
+    const body = await (await search({ organization: OAK })).json();
+    const row = body.rows.find((entry: { 'Pos No': string }) => entry['Pos No'] === '1008');
+    // `position_info.pos_start` stores 1951-01-01 for "not recorded" (1,921
+    // live rows). Rendering it would date a recent position to 1951.
+    expect(row['Position Start']).toBe('');
+    // The rest of the row is unaffected — only the placeholder is swallowed.
+    expect(row['Person Start']).toBe('2019-08-20');
+  });
+
+  it('keeps Position Start on a vacant row but blanks Person Start', async () => {
+    const body = await (await search({ organization: OAK, positionType: 'vacant' })).json();
+    expect(body.rows).toHaveLength(2);
+    for (const row of body.rows) {
+      // The seat exists whether or not anyone fills it — which is what makes a
+      // brand-new unfilled position visible at all.
+      expect(row['Position Start']).toBe('2025-07-01');
+      // No incumbent, therefore no assignment to have started.
+      expect(row['Person Start']).toBe('');
+    }
+  });
+
+  it('filters by position name', async () => {
+    const body = await (await search({ organization: OAK, positionName: 'Teacher' })).json();
+    expect(body.total).toBe(3);
+    expect(body.rows.every((row: { 'Position Name': string }) => row['Position Name'] === 'Teacher')).toBe(true);
+  });
+
+  it('filters by one or more contract types', async () => {
+    const single = await (await search({ organization: OAK, contractTypes: ['NC'] })).json();
+    expect(single.rows).toEqual([expect.objectContaining({ Name: 'Sample, Jordan' })]);
+
+    const multi = await (await search({ organization: OAK, contractTypes: ['1Y', '2Y'] })).json();
+    expect(multi.total).toBe(2);
+  });
+
+  it('excludes vacant positions when a contract filter is applied', async () => {
+    // Vacant rows carry no contract, so NULL/NOT IN semantics drop them.
+    const body = await (await search({ organization: OAK, contractTypes: ['T'] })).json();
+    expect(body.rows).toHaveLength(1);
+    expect(body.rows[0].Vacant).toBe(false);
+  });
+
+  it('filters by contract code and by exact contract dates', async () => {
+    const byCode = await (await search({ organization: OAK, contractCode: '9999' })).json();
+    expect(byCode.rows.map((row: { Name: string }) => row.Name).sort()).toEqual(['Bennett, Casey', 'Example, Alex']);
+
+    const byDate = await (await search({ organization: OAK, contractEnd: '2027-06-30' })).json();
+    expect(byDate.rows.map((row: { Name: string }) => row.Name).sort()).toEqual(['Okafor, Ada', 'Sample, Jordan']);
+  });
+
+  it('filters by Position Start and by Person Start', async () => {
+    // The seat was created 2024-07-01 and Alex's assignment began 2024-08-01,
+    // so the two filters select different populations from the same fixture.
+    const bySeat = await (await search({ organization: OAK, positionStart: '2024-07-01' })).json();
+    expect(bySeat.rows.map((row: { Name: string }) => row.Name)).toEqual(['Example, Alex']);
+
+    const byPerson = await (await search({ organization: OAK, personStart: '2019-08-20' })).json();
+    expect(byPerson.rows.map((row: { Name: string }) => row.Name)).toEqual(['Bennett, Casey']);
+  });
+
+  it('matches the stored position-start value, 1951-01-01 placeholder included', async () => {
+    const body = await (await search({ organization: OAK, positionStart: '1951-01-01' })).json();
+    // 1951-01-01 is `pos_start`'s "not recorded" placeholder (1,921 live rows)
+    // and the grid renders it blank. The filter is a plain exact match on the
+    // stored value, so asking for it returns those rows with an empty Position
+    // Start cell. Deliberate: the alternative is a hidden exception in the SQL
+    // that the in-memory matcher would then have to reproduce.
+    expect(body.rows.map((row: { Name: string }) => row.Name)).toEqual(['Bennett, Casey']);
+    expect(body.rows[0]['Position Start']).toBe('');
+  });
+
+  it('ignores a Position Start or Person Start that is not an ISO date', async () => {
+    const body = await (await search({
+      organization: OAK,
+      positionStart: '2025-7-1',
+      personStart: 'yesterday'
+    })).json();
+    // Same treatment as the contract dates: a malformed value is dropped
+    // rather than sent to the database as a comparison that matches nothing.
+    expect(body.filters).not.toHaveProperty('positionStart');
+    expect(body.filters).not.toHaveProperty('personStart');
+    expect(body.total).toBe(7);
+  });
+
+  it('scopes results to the requested school', async () => {
+    const body = await (await search({ organization: RIVER })).json();
+    expect(body.total).toBe(3);
+    expect(body.rows.every((row: { Organization: string }) => row.Organization === RIVER)).toBe(true);
+  });
+
+  it('rejects a missing organization and an organization outside the caller scope', async () => {
+    expect((await search({})).status).toBe(400);
+    expect((await search({ organization: '' })).status).toBe(400);
+
+    const scoped = { 'x-user-school-ids': 'school-001', 'x-user-view-all': '0' };
+    expect((await search({ organization: OAK }, scoped)).status).toBe(200);
+    expect((await search({ organization: RIVER }, scoped)).status).toBe(403);
+    expect((await search({ organization: RIVER }, scoped).then(async (r) => (await r.json()).error)))
+      .toBe('ORGANIZATION_FORBIDDEN');
+  });
+
+  it('lists the filter options for a school', async () => {
+    const response = await fetch(`${baseUrl}/api/advanced-search/options?organization=${encodeURIComponent(OAK)}`);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.positionNames).toEqual(['Assistant Principal', 'Counselor', 'Media Specialist', 'Principal', 'Teacher']);
+    expect(body.contractTypes.map((type: { code: string }) => type.code)).toEqual(['1Y', '2Y', 'C', 'NC', 'T']);
+    expect(body.contractTypes.find((type: { code: string }) => type.code === 'NC'))
+      .toMatchObject({ description: 'No Contract', count: 1 });
+    expect(body.contractCodes).toEqual(['2027', '2028', '9999']);
+  });
+
+  it('rejects missing organization and out-of-scope callers for options', async () => {
+    expect((await fetch(`${baseUrl}/api/advanced-search/options`)).status).toBe(400);
+    const scoped = { 'x-user-school-ids': 'school-001', 'x-user-view-all': '0' };
+    expect((await fetch(`${baseUrl}/api/advanced-search/options?organization=${encodeURIComponent(RIVER)}`, { headers: scoped })).status)
+      .toBe(403);
+  });
+
+  it('documents the Advanced Search operations in the OpenAPI document', async () => {
+    const document = await (await fetch(`${baseUrl}/api/docs.json`)).json();
+    expect(document.tags.map((tag: { name: string }) => tag.name)).toContain('Advanced Search');
+    expect(document.paths['/advanced-search'].post.operationId).toBe('runAdvancedSearch');
+    expect(document.paths['/advanced-search/options'].get.operationId).toBe('getAdvancedSearchOptions');
+    expect(document.paths['/advanced-search'].post.responses['200'].content['application/json'].schema.$ref)
+      .toBe('#/components/schemas/AdvancedSearchResult');
+  });
+});
+
+describe('Advanced Search generated SQL', () => {
+  const filters = normalizeAdvancedSearchFilters({ organization: 'Test Oak Elementary' });
+
+  it('de-duplicates rows joined through employee_info', () => {
+    // employee_info holds genuine duplicate rows in production (same person,
+    // same position, same dates). Without DISTINCT the LEFT JOIN repeats the
+    // position in the results — measured live: 121 positions, 122 result rows.
+    for (const dialect of ['turso', 'mysql'] as const) {
+      const { text } = buildAdvancedSearchSql(filters, dialect);
+      expect(text).toMatch(/SELECT DISTINCT/);
+    }
+  });
+
+  it('counts contract-type options the same way the search returns them', () => {
+    // If the option count de-duplicated differently from the search, the
+    // dropdown would promise a row count the table cannot reproduce.
+    for (const dialect of ['turso', 'mysql'] as const) {
+      const { contractTypes } = buildAdvancedSearchOptionQueries('Test Oak Elementary', dialect);
+      expect(contractTypes.text).toMatch(/\(\s*SELECT DISTINCT/);
+      expect(contractTypes.text).toMatch(/COUNT\(\*\) AS row_count/);
+      // Portable across SQLite and MySQL — they disagree on COUNT(DISTINCT a, b).
+      expect(contractTypes.text).not.toMatch(/COUNT\(DISTINCT\s+\w+\s*,/);
+    }
+  });
+
+  it('still caps the result set one row past the limit so `truncated` works', () => {
+    const { params } = buildAdvancedSearchSql(filters, 'mysql');
+    expect(params[params.length - 1]).toBe(ADVANCED_SEARCH_ROW_CAP + 1);
+  });
+
+  it('filters Position Start against the seat and Person Start against the incumbent', () => {
+    const dated = normalizeAdvancedSearchFilters({
+      organization: 'Test Oak Elementary',
+      contractStart: '2025-07-01',
+      positionStart: '2025-07-01',
+      personStart: '2025-08-15'
+    });
+    const { text, params } = buildAdvancedSearchSql(dated, 'mysql');
+    // Seat-owned column vs incumbent-owned column — the whole point of having
+    // two filters rather than one.
+    expect(text).toContain('pi.pos_start = ?');
+    expect(text).toContain('e.assign_start = ?');
+    // Bound in the same order the clauses are appended.
+    const dates = params.filter((value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value));
+    expect(dates).toEqual(['2025-07-01', '2025-07-01', '2025-08-15']);
   });
 });

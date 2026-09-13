@@ -36,7 +36,11 @@ export const hybridRepositories: Repositories = {
   personRecords: mysqlRepositories.personRecords,
   reports: mysqlRepositories.reports,
   positions: mysqlRepositories.positions,
+  advancedSearch: mysqlRepositories.advancedSearch,
   schoolKpi: mysqlRepositories.schoolKpi,
+  // Live reporting-table counts: these are DATA, so they come from MySQL even
+  // though the feature flag that gates the page lives in Turso.
+  systemInfo: mysqlRepositories.systemInfo,
 
   // ---- CONFIG: Turso ----
   reportSections: tursoRepositories.reportSections,

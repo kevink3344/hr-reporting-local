@@ -18,6 +18,16 @@ export const openApiDocument = {
       description:
         'Clickable KPI dashboard. Every number is the length of one shared predicate from the metric ' +
         'catalog, so a tile, a breakdown bar and the list it opens can never disagree.'
+    },
+    {
+      name: 'Advanced Search',
+      description: 'Structured, parameterised position search (name, vacancy, contract type/code/dates)'
+    },
+    {
+      name: 'Admin',
+      description:
+        'Administrator-only diagnostics. The data-load report is read-only and gateable by a feature ' +
+        'flag, so it can be turned off without removing the route.'
     }
   ],
   paths: {
@@ -43,6 +53,38 @@ export const openApiDocument = {
           '200': {
             description: 'Service health',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/HealthResponse' } } }
+          }
+        }
+      }
+    },
+    '/system-info': {
+      get: {
+        tags: ['Admin'],
+        operationId: 'getSystemInfo',
+        summary: 'Nightly data-load diagnostics (admin)',
+        description:
+          'Admin-only, and additionally gated by the `system_info` feature flag, which ships OFF. ' +
+          'The reporting tables are reloaded every night, but the database keeps no history of it — ' +
+          'no load timestamp column, no audit table, and no `auto_increment` to diff — so this app ' +
+          'keeps its own baseline in a small JSON file it writes itself (see `snapshotFile`).\n\n' +
+          'Each request measures the live tables (`COUNT(*)` plus `CHECKSUM TABLE`), compares them ' +
+          'with the newest reading taken on a PREVIOUS day, and then records one reading for today. ' +
+          'Opening the page repeatedly is therefore idempotent, and `baseline` is null on the first ' +
+          'day, when there is nothing to compare against yet. The count says how many rows there ' +
+          'are; `contentChanged` says whether they are the same rows, which is what catches a ' +
+          'reload that replaced rows in place.\n\n' +
+          'Returns 403 `FORBIDDEN` without the admin role, and 403 `FEATURE_DISABLED` while the ' +
+          'feature flag is off. `liveCountsAvailable: false` means the live half could not be read ' +
+          '(the `fixtures` and `turso` sources have no reporting tables) — the page still renders ' +
+          'and no reading is recorded.',
+        responses: {
+          '200': {
+            description: 'Recorded baseline merged with the live row counts',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/SystemInfoPayload' } } }
+          },
+          '403': {
+            description: 'Not an admin (`FORBIDDEN`) or the feature flag is off (`FEATURE_DISABLED`)',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
           }
         }
       }
@@ -702,6 +744,68 @@ export const openApiDocument = {
         ],
         responses: { '204': { description: 'Comment deleted' }, '404': { description: 'Comment not found' } }
       }
+    },
+    '/advanced-search': {
+      post: {
+        tags: ['Advanced Search'],
+        operationId: 'runAdvancedSearch',
+        summary: 'Search positions by name, vacancy, contract type/code and contract dates',
+        description:
+          'Every predicate is built and bound server-side — there is no user-authored SQL. ' +
+          '`organization` is required and must be visible to the caller. ' +
+          '`positionType` is `all` (default), `filled` or `vacant`. Setting `positionType = vacant` ' +
+          'clears `contractStart`/`contractEnd`, because a vacant position has no contract at all. ' +
+          'Results are capped at 2000 rows; `truncated` flags a capped response. ' +
+          'Vacant rows carry a blank `Emp No.` and blank contract dates, and `Vacant` is true so ' +
+          'the client can render the vacancy badge instead of a name.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/AdvancedSearchRequest' } }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Search results',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdvancedSearchResult' } }
+            }
+          },
+          '400': { description: 'Invalid or missing `organization`' },
+          '403': { description: 'Organization outside the caller scope (ORGANIZATION_FORBIDDEN)' }
+        }
+      }
+    },
+    '/advanced-search/options': {
+      get: {
+        tags: ['Advanced Search'],
+        operationId: 'getAdvancedSearchOptions',
+        summary: 'List the filter options for one school',
+        description:
+          'DISTINCT position names, the contract types that actually occur in the school ' +
+          '(with a row count so each option shows what it would return) and the DISTINCT ' +
+          'contract codes. Options come from the data, so a school never offers a filter ' +
+          'that would return nothing.',
+        parameters: [
+          {
+            name: 'organization',
+            in: 'query',
+            required: true,
+            description: 'School name, as returned by the reporting tables.',
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'Filter options for the school',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/AdvancedSearchOptions' } }
+            }
+          },
+          '400': { description: 'Missing `organization`' },
+          '403': { description: 'Organization outside the caller scope (ORGANIZATION_FORBIDDEN)' }
+        }
+      }
     }
   },
   components: {
@@ -718,6 +822,94 @@ export const openApiDocument = {
         type: 'object',
         required: ['ok', 'dataSource'],
         properties: { ok: { type: 'boolean' }, dataSource: { type: 'string', example: 'fixtures' } }
+      },
+      SnapshotReading: {
+        type: 'object',
+        required: ['takenAt', 'source', 'counts'],
+        description:
+          'One daily measurement of the reporting tables, recorded by the server itself. One per ' +
+          'day on which an administrator opened the page.',
+        properties: {
+          takenAt: { type: 'string', format: 'date-time', description: 'When the measurement was taken.' },
+          source: { type: 'string', example: 'mysql', description: 'Backing store that produced it.' },
+          counts: {
+            type: 'object',
+            additionalProperties: { type: 'integer' },
+            description: 'Table name to the exact `COUNT(*)` at `takenAt`.'
+          },
+          checksums: {
+            type: 'object',
+            additionalProperties: { type: 'integer' },
+            description: 'Table name to the `CHECKSUM TABLE` value. Empty when the source cannot checksum.'
+          },
+          dataAsOf: { type: 'string', nullable: true, example: '2026-09-11 00:00:00' }
+        }
+      },
+      SystemInfoRow: {
+        type: 'object',
+        required: ['table'],
+        description:
+          'One reporting table. `baselineCount` is the count in the recorded reading being compared ' +
+          'against; `liveCount` is the row count right now. Either side may be null when it could ' +
+          'not be read, which is the normal state on the first day.',
+        properties: {
+          table: { type: 'string', example: 'employee_info' },
+          baselineCount: { type: 'integer', nullable: true },
+          liveCount: { type: 'integer', nullable: true },
+          delta: { type: 'integer', nullable: true },
+          deltaPct: {
+            type: 'number',
+            nullable: true,
+            description: 'delta / baselineCount as a percentage, rounded to 2dp.'
+          },
+          contentChanged: {
+            type: 'boolean',
+            nullable: true,
+            description:
+              'True when the table contents differ from the baseline even though the row count may ' +
+              'match. Null when either side has no checksum.'
+          }
+        }
+      },
+      SystemInfoPayload: {
+        type: 'object',
+        required: ['generatedAt', 'dataSource', 'snapshotFile', 'recordedNow', 'readings', 'rows', 'liveCountsAvailable'],
+        properties: {
+          generatedAt: { type: 'string', format: 'date-time' },
+          dataSource: { type: 'string', enum: ['mysql', 'turso', 'hybrid', 'fixtures'] },
+          snapshotFile: {
+            type: 'string',
+            example: 'docs/data/daily-refresh/system-info-snapshot.json',
+            description: 'Repo-relative path of the snapshot the baseline was read from.'
+          },
+          snapshotError: {
+            type: 'string',
+            nullable: true,
+            description: 'Set when the snapshot file exists but could not be parsed.'
+          },
+          recordedNow: {
+            type: 'boolean',
+            description: 'True when this request appended a reading, i.e. the first one of the day.'
+          },
+          readings: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/SnapshotReading' },
+            description: 'Newest first, capped at 10.'
+          },
+          baseline: {
+            nullable: true,
+            allOf: [{ $ref: '#/components/schemas/SnapshotReading' }],
+            description: 'The newest reading taken on a previous day. Null on the first day.'
+          },
+          rows: { type: 'array', items: { $ref: '#/components/schemas/SystemInfoRow' } },
+          dataAsOf: {
+            type: 'string',
+            nullable: true,
+            example: '2026-09-11 00:00:00',
+            description: 'Newest data date the reporting tables can attest to. Cast to a string so sentinel dates survive.'
+          },
+          liveCountsAvailable: { type: 'boolean', description: 'False when no live counts could be read at all.' }
+        }
       },
       ErrorResponse: {
         type: 'object',
@@ -1456,6 +1648,154 @@ export const openApiDocument = {
           body: { type: 'string', maxLength: 2000 },
           rowKey: { type: 'string', nullable: true },
           parentId: { type: 'string', nullable: true }
+        }
+      },
+      AdvancedSearchRequest: {
+        type: 'object',
+        required: ['organization'],
+        properties: {
+          organization: {
+            type: 'string',
+            description: 'School name. Required; must be visible to the caller.'
+          },
+          positionName: {
+            type: 'string',
+            description: 'Exact position name, as offered by GET /advanced-search/options.'
+          },
+          positionType: {
+            type: 'string',
+            enum: ['all', 'filled', 'vacant'],
+            default: 'all',
+            description:
+              '`vacant` means no incumbent (no full name AND no employee number). Selecting ' +
+              '`vacant` clears the contract date filters and `personStart`, because a vacant ' +
+              'seat has no contract and no incumbent. `positionStart` is kept — it belongs to ' +
+              'the seat.'
+          },
+          contractTypes: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Contract type codes (T, NC, 1Y, 2Y, C, 4E). Empty array means no filter.'
+          },
+          contractCode: {
+            type: 'string',
+            description: 'Tenure / contract code from the contract table.'
+          },
+          contractStart: {
+            type: 'string',
+            format: 'date',
+            description: 'Exact contract start date (`YYYY-MM-DD`). Ignored when positionType is vacant.'
+          },
+          contractEnd: {
+            type: 'string',
+            format: 'date',
+            description: 'Exact contract end date (`YYYY-MM-DD`). Ignored when positionType is vacant.'
+          },
+          positionStart: {
+            type: 'string',
+            format: 'date',
+            description:
+              'Exact seat start date (`YYYY-MM-DD`) — `position_info.pos_start`. Seat-owned, so ' +
+              'unlike the other dates it **also applies when `positionType` is `vacant`**; that is ' +
+              'how you ask "which empty seats open in 2027?". Note `1951-01-01` is the "not ' +
+              'recorded" placeholder in this data (1,921 rows) and the grid renders it blank — ' +
+              'filtering it does match those rows.'
+          },
+          personStart: {
+            type: 'string',
+            format: 'date',
+            description:
+              'Exact start date of the incumbent\u2019s current assignment (`YYYY-MM-DD`) — ' +
+              '`employee_info.assign_start`. Incumbent-owned, so ignored when positionType is ' +
+              'vacant (a vacant seat has nobody to start). This is *not* tenure: it is restamped ' +
+              'when someone moves, and only ~18% of rows equal `hire_date`.'
+          }
+        }
+      },
+      AdvancedSearchRow: {
+        type: 'object',
+        description:
+          'Keyed by the display header so the shared sort / hide / export machinery can consume ' +
+          'it unchanged. `Vacant` is metadata and is not one of the `columns`.',
+        properties: {
+          Name: { type: 'string' },
+          'Emp No.': { type: 'string' },
+          Organization: { type: 'string' },
+          'Position Name': { type: 'string' },
+          'Pos No': { type: 'string' },
+          'Contract Type': {
+            type: 'string',
+            description: 'The contract type label for the incumbent; blank on a vacant row.'
+          },
+          TAP: {
+            type: 'string',
+            description:
+              'The incumbent assignment percentage -- `employee_info.tap` rendered as ' +
+              '`ROUND(tap * 100)`, the same expression the Contract Report uses. `100` means ' +
+              'full time; anything lower is part time and is excluded from the Contract ' +
+              'Report, which filters on `tap = 1`. Blank on a vacant row.'
+          },
+          'Position Start': {
+            type: 'string',
+            description:
+              'When the **seat** starts -- `position_info.pos_start`. Seat-owned, so unlike the ' +
+              'other dates it survives on a vacant row. `1951-01-01` is the "not recorded" ' +
+              'placeholder in this data (1,921 rows) and is deliberately rendered blank rather ' +
+              'than shown as a 1951 date. Format `YYYY-MM-DD`.'
+          },
+          'Person Start': {
+            type: 'string',
+            description:
+              'When the **incumbent** began this assignment -- `employee_info.assign_start`. ' +
+              'Employee-owned, so it blanks with the rest of the incumbent columns on a vacant ' +
+              'row. This is the start of the *current* assignment, not tenure -- it is ' +
+              'restamped when someone moves, and only 18% of rows match `hire_date`. ' +
+              'Format `YYYY-MM-DD`.'
+          },
+          'Cont Start': { type: 'string' },
+          'Cont End': { type: 'string' },
+          Vacant: { type: 'boolean', description: 'True when the position has no incumbent.' }
+        }
+      },
+      AdvancedSearchResult: {
+        type: 'object',
+        properties: {
+          organization: { type: 'string' },
+          columns: { type: 'array', items: { type: 'string' } },
+          rows: { type: 'array', items: { $ref: '#/components/schemas/AdvancedSearchRow' } },
+          total: { type: 'integer' },
+          truncated: { type: 'boolean', description: 'True when the 2000-row cap was hit.' },
+          filters: {
+            type: 'object',
+            description: 'The normalised filters that actually applied (blank values are omitted).',
+            properties: {
+              organization: { type: 'string' },
+              positionName: { type: 'string' },
+              positionType: { type: 'string', enum: ['all', 'filled', 'vacant'] },
+              contractTypes: { type: 'array', items: { type: 'string' } },
+              contractCode: { type: 'string' },
+              contractStart: { type: 'string' },
+              contractEnd: { type: 'string' }
+            }
+          }
+        }
+      },
+      AdvancedSearchOptions: {
+        type: 'object',
+        properties: {
+          positionNames: { type: 'array', items: { type: 'string' } },
+          contractTypes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                code: { type: 'string', example: 'NC' },
+                description: { type: 'string', example: 'No Contract' },
+                count: { type: 'integer', example: 4 }
+              }
+            }
+          },
+          contractCodes: { type: 'array', items: { type: 'string' } }
         }
       }
     }

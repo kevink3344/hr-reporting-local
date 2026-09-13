@@ -1,4 +1,7 @@
 import type {
+  AdvancedSearchFilters,
+  AdvancedSearchOptions,
+  AdvancedSearchResult,
   EmployeeLookup,
   FuturePosition,
   FuturePositionStatus,
@@ -101,6 +104,17 @@ export type PositionSearchHit = {
   incumbentPersonId: string;
   vacant: boolean;
 };
+
+/**
+ * Advanced Search -- a structured, read-only position search. Unlike report
+ * definitions there is no user-authored SQL: every predicate is server-built
+ * and every value is bound, so the client can never inject SQL.
+ */
+export interface AdvancedSearchRepository {
+  search(filters: AdvancedSearchFilters): Promise<AdvancedSearchResult>;
+  /** DISTINCT position names / contract types / contract codes for one school. */
+  searchOptions(organization: string): Promise<AdvancedSearchOptions>;
+}
 
 export type ReportSectionInput = {
   title: string;
@@ -477,12 +491,36 @@ export interface AiHistoryRepository {
   delete(id: string, userId: string): Promise<boolean>;
 }
 
+/**
+ * Live view of the nightly-refreshed reporting tables, for the admin System
+ * Information page. This is a point-in-time read of the reporting database: the
+ * page compares it against the reading the server recorded itself, because no
+ * history table exists (or should be created) to remember past loads.
+ */
+export type DataSnapshot = {
+  /** Table name -> current row count. Names it can't read are simply absent. */
+  counts: Record<string, number>;
+  /**
+   * Table name -> `CHECKSUM TABLE` value, when the source can produce one. This
+   * is what separates "rows were added" from "the table was reloaded with the
+   * same number of different rows". Absent when the source cannot checksum.
+   */
+  checksums: Record<string, number>;
+  /** Newest business date the employee data can attest to, or null. */
+  asOf: string | null;
+};
+
+export interface SystemInfoRepository {
+  snapshot(tables: string[]): Promise<DataSnapshot>;
+}
+
 export type Repositories = {
   people: PeopleRepository;
   schools: SchoolsRepository;
   personRecords: PersonRecordsRepository;
   reports: ReportsRepository;
   positions: PositionsRepository;
+  advancedSearch: AdvancedSearchRepository;
   schoolKpi: SchoolKpiRepository;
   reportSections: ReportSectionsRepository;
   reportDefinitions: ReportDefinitionsRepository;
@@ -497,4 +535,5 @@ export type Repositories = {
   styleThemes: StyleThemesRepository;
   aiHistory: AiHistoryRepository;
   users: UsersRepository;
+  systemInfo: SystemInfoRepository;
 };

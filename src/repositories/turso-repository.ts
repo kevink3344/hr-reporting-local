@@ -591,6 +591,11 @@ export const tursoRepositories: Repositories = {
   // contract is satisfied without duplicating the metric definitions.
   schoolKpi: fixtureRepositories.schoolKpi,
   positions: { getPositionDetails, search: searchPositions },
+  // Delegated to the fixture for the same reason as schoolKpi above: one
+  // source of truth for the predicate vocabulary. `advanced-search.ts` owns
+  // the rules and the fixture runs them over its seed rows, so the contract is
+  // satisfied without a third SQL dialect of the same search.
+  advancedSearch: fixtureRepositories.advancedSearch,
   reportSections: {
     async list(includeInactive = false) {
       const rows = await query<SectionRow>(
@@ -1601,6 +1606,14 @@ export const tursoRepositories: Repositories = {
       if (!rows[0]) return false;
       await query('DELETE FROM ask_history WHERE id = ?', [id]);
       return true;
+    }
+  },
+  // Turso holds the app's own tables plus a development copy of the reporting
+  // data, so there is no meaningful "live" count to compare against a recorded
+  // reading. Report nothing and let the page explain why.
+  systemInfo: {
+    async snapshot() {
+      return { counts: {}, checksums: {}, asOf: null };
     }
   }
 };

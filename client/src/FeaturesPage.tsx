@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Flag, Gauge, MessageSquare, Palette } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronRight, Flag, Gauge, HardDrive, MessageSquare, Palette, SearchCheck, Send } from 'lucide-react';
 import { getFeatureFlag, setFeatureFlag } from './api';
 import { isFeatureFlagKey } from './types';
 import type { FeatureFlagsResponse, LoginSession } from './types';
@@ -71,7 +71,17 @@ function FeatureRow({
 // here gates something the shell has already rendered — a nav item, a whole
 // view, or a panel inside a position — so without this the switch would appear
 // to do nothing until the next page load.
-export function FeaturesPage({ session, onFlagsChanged }: { session: LoginSession; onFlagsChanged?: (flags: Partial<FeatureFlagsResponse>) => void }) {
+//
+// `onManageSystemMessages` opens the System-wide messages page. That page is
+// deliberately NOT in the navigation: this page is the only way in, which is why
+// the flag row is accompanied by an explicit "Manage messages" link.
+//
+// `onManageSystemInfo` does the same for the System Information page, which is
+// also absent from the navigation because it is an admin-only beta diagnostic.
+//
+// `onManageStyleConfig` likewise opens Style Configuration, which is no longer a
+// navigation item either -- the switch and the link below are the only way in.
+export function FeaturesPage({ session, onFlagsChanged, onManageSystemMessages, onManageSystemInfo, onManageStyleConfig }: { session: LoginSession; onFlagsChanged?: (flags: Partial<FeatureFlagsResponse>) => void; onManageSystemMessages?: () => void; onManageSystemInfo?: () => void; onManageStyleConfig?: () => void }) {
   const [futureEnabled, setFutureEnabled] = useState(false);
   const [autoLookupEnabled, setAutoLookupEnabled] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
@@ -79,6 +89,14 @@ export function FeaturesPage({ session, onFlagsChanged }: { session: LoginSessio
   // Defaults ON: the dashboard is already live, so the switch starts where the
   // server's opt-out default says it should. See GET /api/feature-flags.
   const [kpiEnabled, setKpiEnabled] = useState(true);
+  // Defaults ON for the same reason: the message manager is already in use.
+  const [systemMessagesEnabled, setSystemMessagesEnabled] = useState(true);
+  // Defaults OFF: System Information is a beta diagnostic, so it ships hidden
+  // and only an explicit "on" turns it on. See GET /api/feature-flags.
+  const [systemInfoEnabled, setSystemInfoEnabled] = useState(false);
+  // Defaults OFF: Advanced Search is a new read surface, so it ships hidden
+  // behind an opt-in flag. See GET /api/feature-flags.
+  const [advancedSearchEnabled, setAdvancedSearchEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
@@ -93,6 +111,9 @@ export function FeaturesPage({ session, onFlagsChanged }: { session: LoginSessio
         setAiEnabled(flags.ai_assistant);
         setStyleConfigEnabled(flags.style_configuration);
         setKpiEnabled(flags.kpi_dashboard);
+        setSystemMessagesEnabled(flags.system_messages);
+        setSystemInfoEnabled(flags.system_info);
+        setAdvancedSearchEnabled(flags.advanced_search);
       })
       .catch(() => setError('The feature flags could not be loaded.'))
       .finally(() => setLoading(false));
@@ -185,13 +206,70 @@ export function FeaturesPage({ session, onFlagsChanged }: { session: LoginSessio
 
         <div className="feature-group">
           <h3 className="settings-section-title"><Palette size={16} />Style Configuration</h3>
-          <p className="settings-section-desc">When enabled, a <strong>Style Configuration</strong> page appears in the navigation. Admins can add CSS styles — including separate main and number/code fonts — and staff can apply the style they prefer.</p>
+          <p className="settings-section-desc">When enabled, admins can add CSS styles — including separate main and number/code fonts — and staff can apply the style they prefer. Like System-wide messages, this one has <strong>no navigation link</strong> — open it from the button below.</p>
           <FeatureRow
             enabled={styleConfigEnabled}
             saving={saving}
             title="Enable Style Configuration"
             description="Add and apply CSS styles across the workspace."
             onToggle={(next) => void toggle('style_configuration', next, setStyleConfigEnabled, 'Style Configuration')}
+          />
+          {onManageStyleConfig && (
+            <button type="button" className="feature-link" disabled={!styleConfigEnabled} onClick={onManageStyleConfig}>
+              <span className="feature-link-label">Manage styles</span>
+              <ChevronRight size={17} />
+            </button>
+          )}
+          {!styleConfigEnabled && <p className="settings-hint">Turn on Style Configuration to manage styles.</p>}
+        </div>
+
+        <div className="feature-group">
+          <h3 className="settings-section-title"><Send size={16} />System-wide messages</h3>
+          <p className="settings-section-desc">When enabled, admins can publish announcements to everyone: a <strong>Banner</strong> renders as a full-width strip directly beneath the header on every page until each person dismisses it, and a <strong>Splash</strong> takes over the screen once, right after sign-in. Unlike the other features, this one has <strong>no navigation link</strong> — open the manager from the button below.</p>
+          <FeatureRow
+            enabled={systemMessagesEnabled}
+            saving={saving}
+            title="Enable System-wide messages"
+            description="Publish Banner and Splash announcements to everyone."
+            onToggle={(next) => void toggle('system_messages', next, setSystemMessagesEnabled, 'System-wide messages')}
+          />
+          {onManageSystemMessages && (
+            <button type="button" className="feature-link" disabled={!systemMessagesEnabled} onClick={onManageSystemMessages}>
+              <span className="feature-link-label">Manage messages</span>
+              <ChevronRight size={17} />
+            </button>
+          )}
+          {!systemMessagesEnabled && <p className="settings-hint">Turn on System-wide messages to manage them.</p>}
+        </div>
+
+        <div className="feature-group">
+          <h3 className="settings-section-title"><HardDrive size={16} />System Information (Beta)</h3>
+          <p className="settings-section-desc">When enabled, an admin-only <strong>System Information</strong> page shows what changed in the nightly data load. The reporting database keeps no history — no load timestamp, no audit table, no counter to diff — so the server keeps its own baseline in a small JSON file: one reading a day, compared with the live row counts. It also fingerprints every table, so a reload that replaces rows without changing the count still shows up. Like System-wide messages, this one has <strong>no navigation link</strong> — open it from the button below.</p>
+          <FeatureRow
+            enabled={systemInfoEnabled}
+            saving={saving}
+            title="Enable System Information"
+            description="Show the admin data-load diagnostics page."
+            onToggle={(next) => void toggle('system_info', next, setSystemInfoEnabled, 'System Information')}
+          />
+          {onManageSystemInfo && (
+            <button type="button" className="feature-link" disabled={!systemInfoEnabled} onClick={onManageSystemInfo}>
+              <span className="feature-link-label">View system information</span>
+              <ChevronRight size={17} />
+            </button>
+          )}
+          {!systemInfoEnabled && <p className="settings-hint">Turn on System Information to view it.</p>}
+        </div>
+
+        <div className="feature-group">
+          <h3 className="settings-section-title"><SearchCheck size={16} />Advanced Search</h3>
+          <p className="settings-section-desc">When enabled, an <strong>Advanced Search</strong> page appears in the navigation. It searches the positions you can see by position name, vacancy, contract type, contract code and contract dates, and every result opens the position or the person record behind it.</p>
+          <FeatureRow
+            enabled={advancedSearchEnabled}
+            saving={saving}
+            title="Enable Advanced Search"
+            description="Search positions by name, vacancy, contract type, code and dates."
+            onToggle={(next) => void toggle('advanced_search', next, setAdvancedSearchEnabled, 'Advanced Search')}
           />
         </div>
       </div>

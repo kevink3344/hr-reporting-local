@@ -54,6 +54,14 @@ import { REPORT_ROW_CAP, bindOrganization, newId, nowIso, validateReportSql, val
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
 import { viewDefinitionSchema } from '../report-views.js';
 import { buildSchoolKpiPayload, buildSchoolKpiRows } from '../kpi-definitions.js';
+import type { AdvancedSearchFilters, AdvancedSearchOptions, AdvancedSearchResult } from '../types.js';
+import {
+  buildAdvancedSearchResult,
+  isPositionOccupied,
+  matchesAdvancedSearchFilters,
+  toAdvancedSearchOptions,
+  type AdvancedSearchSourceRow
+} from '../advanced-search.js';
 
 const dataDirectory = resolve(process.cwd(), 'docs', 'data');
 
@@ -228,6 +236,146 @@ const fixtureOpenPositions: OpenPositionRow[] = fixtureKpiRows.map(toOpenPositio
 
 async function openPositions(organization: string): Promise<OpenPositionRow[]> {
   return fixtureOpenPositions.filter((row) => row.organization === organization);
+}
+
+// ---------------------------------------------------------------------------
+// Advanced Search seed.
+//
+// This is deliberately a SEPARATE array rather than a widening of
+// `fixtureOpenPositions`: OpenPositionRow is the Open Positions API response
+// shape asserted in app.test.ts and carries no contractStart/contractType, so
+// extending it would change an existing contract. The four positions that
+// already exist above are repeated here with the SAME posNumber/incumbent so
+// Position Details and Advanced Search agree, plus extra rows that exercise
+// every contract type, the vacant path, and a part-time `tap` (see posNumber
+// 1003) — the case that made the Contract Report and Advanced Search disagree.
+//
+// Contract codes are the real ones from docs/columns/col-values.md
+// (T, NC, 1Y, 2Y, C, 4E) — NOT the fixture-only 'N Code'/'Regular' vocabulary
+// used by the Open Positions seed.
+// ---------------------------------------------------------------------------
+const fixtureSearchRows: AdvancedSearchSourceRow[] = [
+  {
+    organization: 'Test Oak Elementary', posName: 'Teacher', posNumber: '1001',
+    fullName: 'Example, Alex', employeeNumber: '900001',
+    contractType: 'T', tenureCode: '9999',
+    tap: 1,
+    posStart: '2024-07-01', assignStart: '2024-08-01',
+    contractStart: '2024-07-01', contractEnd: '2025-06-30'
+  },
+  {
+    // Vacant — no incumbent, therefore no contract dates at all.
+    organization: 'Test Oak Elementary', posName: 'Assistant Principal', posNumber: '1002',
+    fullName: '', employeeNumber: '',
+    contractType: '', tenureCode: '',
+    tap: null,
+    contractStart: '2025-07-01', contractEnd: '2026-06-30',
+    posStart: '2025-07-01', posEnding: '2026-06-30'
+  },
+  {
+    organization: 'Test Oak Elementary', posName: 'Principal', posNumber: '1003',
+    fullName: 'Sample, Jordan', employeeNumber: '900002',
+    contractType: 'NC', tenureCode: '2028',
+    // Part time. The Contract Report filters on `tap = 1`, so this row is in
+    // Advanced Search but not in the report — the live discrepancy in fixture
+    // form (34 here vs 33 there).
+    tap: 0.6,
+    // Seat created years before this person took it — the normal shape.
+    posStart: '2025-07-01', assignStart: '2025-08-15',
+    contractStart: '2025-08-01', contractEnd: '2027-06-30'
+  },
+  {
+    organization: 'Test Oak Elementary', posName: 'Teacher', posNumber: '1005',
+    fullName: 'Nguyen, Bao', employeeNumber: '900003',
+    contractType: '1Y', tenureCode: '2027',
+    tap: 1,
+    // Identical in both columns — a person placed into a seat the day it opened.
+    posStart: '2025-07-01', assignStart: '2025-07-01',
+    contractStart: '2025-07-01', contractEnd: '2026-06-30'
+  },
+  {
+    // Vacant.
+    organization: 'Test Oak Elementary', posName: 'Counselor', posNumber: '1006',
+    fullName: '', employeeNumber: '',
+    contractType: '', tenureCode: '',
+    tap: null,
+    contractStart: '2025-07-01', contractEnd: '2026-06-30',
+    posStart: '2025-07-01', posEnding: '2026-06-30'
+  },
+  {
+    organization: 'Test Oak Elementary', posName: 'Teacher', posNumber: '1007',
+    fullName: 'Okafor, Ada', employeeNumber: '900004',
+    contractType: '2Y', tenureCode: '2027',
+    tap: 1,
+    posStart: '2025-07-01', assignStart: '2025-08-10',
+    contractStart: '2025-07-01', contractEnd: '2027-06-30'
+  },
+  {
+    organization: 'Test Oak Elementary', posName: 'Media Specialist', posNumber: '1008',
+    fullName: 'Bennett, Casey', employeeNumber: '900005',
+    contractType: 'C', tenureCode: '9999',
+    tap: 1,
+    // `pos_start` uses 1951-01-01 as its "not recorded" placeholder (1,921
+    // live rows). It must render blank, not as a 1951 date.
+    posStart: '1951-01-01', assignStart: '2019-08-20',
+    contractStart: '2023-07-01', contractEnd: '2026-06-30'
+  },
+  {
+    organization: 'Test River High', posName: 'Teacher', posNumber: '1004',
+    fullName: 'Smith, Riley', employeeNumber: '900006',
+    contractType: 'T', tenureCode: '9999',
+    tap: 1,
+    posStart: '2024-07-01', assignStart: '2024-08-12',
+    contractStart: '2024-08-01', contractEnd: '2026-06-30'
+  },
+  {
+    // Vacant.
+    organization: 'Test River High', posName: 'Assistant Principal', posNumber: '1009',
+    fullName: '', employeeNumber: '',
+    contractType: '', tenureCode: '',
+    tap: null,
+    contractStart: '2025-07-01', contractEnd: '2026-06-30',
+    posStart: '2025-07-01', posEnding: '2026-06-30'
+  },
+  {
+    // 4E has no description in the catalogue — exercises the blank fallback.
+    organization: 'Test River High', posName: 'Teacher', posNumber: '1010',
+    fullName: 'Delgado, Marco', employeeNumber: '900007',
+    contractType: '4E', tenureCode: '2027',
+    tap: 1,
+    posStart: '2025-07-01', assignStart: '2025-07-01',
+    contractStart: '2025-07-01', contractEnd: '2026-06-30'
+  }
+];
+
+async function advancedSearch(filters: AdvancedSearchFilters): Promise<AdvancedSearchResult> {
+  // Same ORDER BY as the SQL: name, then position name. Blank names (vacant
+  // rows) sort first, exactly as an empty string does in SQLite.
+  const matches = fixtureSearchRows
+    .filter((row) => matchesAdvancedSearchFilters(row, filters))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName) || a.posName.localeCompare(b.posName));
+  return buildAdvancedSearchResult(filters.organization, filters, matches);
+}
+
+async function advancedSearchOptions(organization: string): Promise<AdvancedSearchOptions> {
+  const scoped = fixtureSearchRows.filter((row) => row.organization === organization);
+
+  const counts = new Map<string, { code: string; description: string; count: number }>();
+  for (const row of scoped) {
+    if (!isPositionOccupied(row.fullName, row.employeeNumber)) continue;
+    if (!row.contractType) continue;
+    const existing = counts.get(row.contractType);
+    if (existing) existing.count += 1;
+    else counts.set(row.contractType, { code: row.contractType, description: '', count: 1 });
+  }
+
+  return toAdvancedSearchOptions({
+    positionNames: scoped.map((row) => row.posName),
+    contractTypes: [...counts.values()],
+    contractCodes: scoped
+      .filter((row) => isPositionOccupied(row.fullName, row.employeeNumber))
+      .map((row) => row.tenureCode)
+  });
 }
 
 /**
@@ -497,6 +645,7 @@ export const fixtureRepositories: Repositories = {
   reports: { openPositions },
   schoolKpi: fixtureSchoolKpiRepository,
   positions: { getPositionDetails, search: searchPositions },
+  advancedSearch: { search: advancedSearch, searchOptions: advancedSearchOptions },
   reportSections: {
     async list(includeInactive = false) {
       const sections = (includeInactive ? fixtureSections : fixtureSections.filter((section) => section.isActive))
@@ -699,7 +848,17 @@ export const fixtureRepositories: Repositories = {
   futurePositions: buildFixtureFuturePositions(),
   featureFlags: buildFixtureFeatureFlags(),
   styleThemes: buildFixtureStyleThemes(),
-  aiHistory: buildFixtureAiHistory()
+  aiHistory: buildFixtureAiHistory(),
+  // Fixtures model the app's own tables, not the Oracle reporting load, so
+  // there are no live counts to compare against a recorded reading. Returning
+  // an empty snapshot is deliberate — inventing plausible row counts here would
+  // make a demo look like evidence. The route also skips recording a reading
+  // when the counts are empty, so a fixtures run never touches the file.
+  systemInfo: {
+    async snapshot() {
+      return { counts: {}, checksums: {}, asOf: null };
+    }
+  }
 };
 
 function buildFixtureReportViews(): Repositories['reportViews'] {
@@ -1321,9 +1480,15 @@ function buildFixtureFuturePositions(): Repositories['futurePositions'] {
 // ---- Feature flags (admin-gated toggles) ----
 const fixtureFeatureFlags = new Map<string, { key: string; enabled: boolean; updatedBy: string | null; updatedAt: string | null }>();
 fixtureFeatureFlags.set('future_positions', { key: 'future_positions', enabled: false, updatedBy: null, updatedAt: null });
-// The KPI Dashboard is already live, so it seeds ON: this is the one opt-out
-// flag, matching the server's `?? true` default in GET /api/feature-flags.
+// The KPI Dashboard is already live, so it seeds ON: this is one of the two
+// opt-out flags, matching the server's `?? true` default in GET /api/feature-flags.
 fixtureFeatureFlags.set('kpi_dashboard', { key: 'kpi_dashboard', enabled: true, updatedBy: null, updatedAt: null });
+// System-wide messages are also already in use to announce work in progress, so
+// this opt-out flag seeds ON for the same reason as kpi_dashboard.
+fixtureFeatureFlags.set('system_messages', { key: 'system_messages', enabled: true, updatedBy: null, updatedAt: null });
+
+// Advanced Search ships OFF by default, exactly like the live flag seed.
+fixtureFeatureFlags.set('advanced_search', { key: 'advanced_search', enabled: false, updatedBy: null, updatedAt: null });
 
 function buildFixtureFeatureFlags(): Repositories['featureFlags'] {
   return {

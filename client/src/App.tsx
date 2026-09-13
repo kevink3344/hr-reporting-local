@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, Clock, Copy, Eye, EyeOff, FileText, Flag, Gauge, GripVertical, Home, Lock, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, Clock, Copy, Eye, EyeOff, FileText, Flag, Gauge, GripVertical, Home, Lock, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, SearchCheck, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
 import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getDirectory, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
 import type { DirectoryPositionResult, DirectoryResult, FeatureFlagsResponse, FuturePosition, FuturePositionStatus, KpiFacet, KpiMetricKey, KpiTarget, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
+import { AdvancedSearchPage } from './AdvancedSearchPage';
 import { FuturePositionsPage } from './FuturePositionsPage';
 import { ReportsPage } from './ReportsPage';
 import { KpiDashboardPage } from './KpiDashboardPage';
@@ -10,7 +11,9 @@ import { KpiDrilldownPage } from './KpiDrilldownPage';
 import { KpiDefinitionPage } from './KpiDefinitionPage';
 import { SettingsPage } from './SettingsPage';
 import { FeaturesPage } from './FeaturesPage';
+import { SystemInfoPage } from './SystemInfoPage';
 import { StyleConfigurationPage } from './StyleConfigurationPage';
+import { SystemMessagesPage } from './SystemMessagesPage';
 import { AiAssistantPage } from './AiAssistantPage';
 import { UserSettingsPage } from './UserSettingsPage';
 import { SchoolCombobox } from './SchoolCombobox';
@@ -925,7 +928,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'home' | 'reports' | 'positions' | 'kpi' | 'kpi-drilldown' | 'kpi-definition' | 'settings' | 'future-positions' | 'ai' | 'style-config' | 'features'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'reports' | 'positions' | 'advanced-search' | 'kpi' | 'kpi-drilldown' | 'kpi-definition' | 'settings' | 'future-positions' | 'ai' | 'style-config' | 'features' | 'system-messages' | 'system-info'>('home');
   // Clickable KPI dashboard: the selected school is shared by all three KPI
   // views, and the drill-down/definition screens are driven by these targets.
   const [kpiSchoolId, setKpiSchoolId] = useState('');
@@ -944,12 +947,25 @@ export function App() {
   const [futureEnabled, setFutureEnabled] = useState(false);
   // Feature flags — AI Assistant toggle (admin-controlled, gates the AI nav + page).
   const [aiEnabled, setAiEnabled] = useState(false);
-  // Feature flags — Style Configuration toggle (admin-controlled, gates the nav + page).
+  // Feature flags — Style Configuration toggle (admin-controlled, gates the page).
+  // No nav item: the page is reached only from the Features page, exactly like
+  // System-wide messages, so this flag just decides whether that entry works.
   const [styleConfigEnabled, setStyleConfigEnabled] = useState(false);
   // Feature flags — KPI Dashboard toggle (admin-controlled, gates the nav + views).
   // Defaults ON and stays ON when the flags request fails: the dashboard is
   // already live, so only an explicit "off" from the server may hide it.
   const [kpiEnabled, setKpiEnabled] = useState(true);
+  // Feature flags — System-wide messages toggle (admin-controlled, gates the
+  // message page and the announcements themselves). Opt-out like the KPI
+  // Dashboard: it is already in use, so only an explicit "off" hides it.
+  const [systemMessagesEnabled, setSystemMessagesEnabled] = useState(true);
+  // Feature flags — System Information toggle (admin-controlled, gates the
+  // beta diagnostics page). Opt-IN like the other betas: it ships hidden and
+  // only an explicit "on" from the server reveals it.
+  const [systemInfoEnabled, setSystemInfoEnabled] = useState(false);
+  // Feature flags — Advanced Search. Opt-IN like the other betas, so the page
+  // and its nav entry stay hidden until an admin turns it on from Features.
+  const [advancedSearchEnabled, setAdvancedSearchEnabled] = useState(false);
   // System-wide messages: active announcements loaded from the server, plus
   // the set the current user has dismissed (per-user, persisted in localStorage).
   const [systemMessages, setSystemMessages] = useState<SystemMessage[]>([]);
@@ -1017,7 +1033,7 @@ export function App() {
 
   // Load the feature flags on user change.
   useEffect(() => {
-    if (!session) { setFutureEnabled(false); setAiEnabled(false); setStyleConfigEnabled(false); setKpiEnabled(true); return; }
+    if (!session) { setFutureEnabled(false); setAiEnabled(false); setStyleConfigEnabled(false); setKpiEnabled(true); setSystemMessagesEnabled(true); setSystemInfoEnabled(false); setAdvancedSearchEnabled(false); return; }
     let cancelled = false;
     getFeatureFlag(session)
       .then((flags) => {
@@ -1026,10 +1042,13 @@ export function App() {
         setAiEnabled(flags.ai_assistant);
         setStyleConfigEnabled(flags.style_configuration);
         setKpiEnabled(flags.kpi_dashboard);
+        setSystemMessagesEnabled(flags.system_messages);
+        setSystemInfoEnabled(flags.system_info);
+        setAdvancedSearchEnabled(flags.advanced_search);
       })
-      // The KPI Dashboard is opt-out, so a failed request leaves it on; the
-      // other flags are opt-in and fail closed.
-      .catch(() => { if (!cancelled) { setFutureEnabled(false); setAiEnabled(false); setStyleConfigEnabled(false); setKpiEnabled(true); } });
+      // The KPI Dashboard and System-wide messages are opt-out, so a failed
+      // request leaves them on; the other flags are opt-in and fail closed.
+      .catch(() => { if (!cancelled) { setFutureEnabled(false); setAiEnabled(false); setStyleConfigEnabled(false); setKpiEnabled(true); setSystemMessagesEnabled(true); setSystemInfoEnabled(false); setAdvancedSearchEnabled(false); } });
     return () => { cancelled = true; };
   }, [session?.user?.id]);
 
@@ -1044,9 +1063,12 @@ export function App() {
       (!kpiEnabled && (activeView === 'kpi' || activeView === 'kpi-drilldown' || activeView === 'kpi-definition')) ||
       (!aiEnabled && activeView === 'ai') ||
       (!styleConfigEnabled && activeView === 'style-config') ||
-      (!futureEnabled && activeView === 'future-positions');
+      (!futureEnabled && activeView === 'future-positions') ||
+      (!systemMessagesEnabled && activeView === 'system-messages') ||
+      (!systemInfoEnabled && activeView === 'system-info') ||
+      (!advancedSearchEnabled && activeView === 'advanced-search');
     if (stranded) setActiveView('home');
-  }, [kpiEnabled, aiEnabled, styleConfigEnabled, futureEnabled, activeView]);
+  }, [kpiEnabled, aiEnabled, styleConfigEnabled, futureEnabled, systemMessagesEnabled, systemInfoEnabled, advancedSearchEnabled, activeView]);
 
   // Apply the signed-in user's saved style. Built-in styles resolve locally;
   // an admin-authored style is fetched from the server. Falls back to default.
@@ -1209,16 +1231,24 @@ export function App() {
     if (typeof flags.ai_assistant === 'boolean') setAiEnabled(flags.ai_assistant);
     if (typeof flags.style_configuration === 'boolean') setStyleConfigEnabled(flags.style_configuration);
     if (typeof flags.kpi_dashboard === 'boolean') setKpiEnabled(flags.kpi_dashboard);
+    if (typeof flags.system_messages === 'boolean') setSystemMessagesEnabled(flags.system_messages);
+    if (typeof flags.system_info === 'boolean') setSystemInfoEnabled(flags.system_info);
+    if (typeof flags.advanced_search === 'boolean') setAdvancedSearchEnabled(flags.advanced_search);
   }
 
-  function navigate(view: 'home' | 'reports' | 'positions' | 'kpi' | 'settings' | 'future-positions' | 'ai' | 'style-config' | 'features') {
+  function navigate(view: 'home' | 'reports' | 'positions' | 'advanced-search' | 'kpi' | 'settings' | 'future-positions' | 'ai' | 'style-config' | 'features' | 'system-messages' | 'system-info') {
     if (view === 'settings' && !isAdmin) return;
     if (view === 'future-positions' && !isDataTeam) return;
     if (view === 'ai' && !aiEnabled) return;
     if (view === 'style-config' && !styleConfigEnabled) return;
     if (view === 'kpi' && !kpiEnabled) return;
+    if (view === 'advanced-search' && !advancedSearchEnabled) return;
     if (view === 'future-positions' && !futureEnabled) return;
     if (view === 'features' && !isAdmin) return;
+    if (view === 'system-messages' && !isAdmin) return;
+    if (view === 'system-messages' && !systemMessagesEnabled) return;
+    if (view === 'system-info' && !isAdmin) return;
+    if (view === 'system-info' && !systemInfoEnabled) return;
     setActiveView(view);
     setMenuOpen(false);
   }
@@ -1594,7 +1624,7 @@ export function App() {
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
       <aside className={`side-navigation ${menuOpen ? 'open' : ''}`} aria-label="Main navigation">
         <div className="side-navigation-heading"><strong>HR Reporting</strong><button className="icon-button" onClick={() => setMenuOpen(false)} aria-label="Close navigation" title="Close navigation"><X size={17} /></button></div>
-        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{kpiEnabled && <button className={activeView === 'kpi' || activeView === 'kpi-drilldown' || activeView === 'kpi-definition' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('kpi')}><Gauge size={18} /><span>KPI Dashboard</span></button>}{isDataTeam && futureEnabled && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions (Beta)</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{isAdmin && <button className={activeView === 'features' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('features')}><Flag size={18} /><span>Features</span></button>}{styleConfigEnabled && <button className={activeView === 'style-config' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('style-config')}><Palette size={18} /><span>Style Configuration</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant (Development Only)</span></button>}</nav>
+        <nav><button className={activeView === 'home' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('home')}><Home size={18} /><span>Home</span></button><button className={activeView === 'reports' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('reports')}><BarChart3 size={18} /><span>Reports</span></button><button className={activeView === 'positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('positions')}><Pin size={18} /><span>Positions</span>{positionPinsCount > 0 && <span className="nav-count">{positionPinsCount}</span>}</button>{advancedSearchEnabled && <button className={activeView === 'advanced-search' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('advanced-search')}><SearchCheck size={18} /><span>Advanced Search</span></button>}{kpiEnabled && <button className={activeView === 'kpi' || activeView === 'kpi-drilldown' || activeView === 'kpi-definition' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('kpi')}><Gauge size={18} /><span>KPI Dashboard</span></button>}{isDataTeam && futureEnabled && <button className={activeView === 'future-positions' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('future-positions')}><ClipboardCheck size={18} /><span>Future Positions (Beta)</span></button>}{isAdmin && <button className={activeView === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SlidersHorizontal size={18} /><span>Report Configuration</span></button>}{isAdmin && <button className={activeView === 'features' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('features')}><Flag size={18} /><span>Features</span></button>}{aiEnabled && <button className={activeView === 'ai' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('ai')}><MessageSquare size={18} /><span>AI Assistant (Development Only)</span></button>}</nav>
       </aside>
       <header className="topbar">
         <button className="icon-button menu-trigger" onClick={() => setMenuOpen(true)} aria-label="Open navigation" title="Open navigation"><Menu size={21} /></button>
@@ -1616,7 +1646,7 @@ export function App() {
         </div>
       </header>
 
-      {visibleBanners.length > 0 && (
+      {systemMessagesEnabled && visibleBanners.length > 0 && (
         <div className="system-banners" role="region" aria-label="Announcements">
           {visibleBanners.map((message) => (
             <div key={message.id} className="system-banner">
@@ -1632,7 +1662,7 @@ export function App() {
         </div>
       )}
 
-      {activeView === 'reports' ? <ReportsPage schools={schools} session={session} onManage={isAdmin ? () => navigate('settings') : undefined} onOpenRecord={openRecordByEmployeeNumber} onOpenPosition={openPositionByNumber} /> : activeView === 'kpi' ? <KpiDashboardPage session={session} schools={schools} schoolId={kpiSchoolId} onSchoolChange={setKpiSchoolId} pendingRequest={kpiPendingRequest} onPendingHandled={() => setKpiPendingRequest(null)} onDrill={openKpiList} onDefine={openKpiDefinition} /> : activeView === 'kpi-drilldown' ? (kpiTarget ? <KpiDrilldownPage session={session} target={kpiTarget} onBack={() => navigate('kpi')} onDefine={openKpiDefinition} onOpenPosition={openPositionByNumber} onOpenRecord={openRecordByEmployeeNumber} /> : <section className="reports-page"><div className="empty-state"><AlertCircle size={26} /><p>Pick a tile or a bar on the KPI dashboard to open a list.</p></div><button className="back-button" onClick={() => navigate('kpi')}><ArrowUpRight size={17} />KPI dashboard</button></section>) : activeView === 'kpi-definition' ? <KpiDefinitionPage metric={kpiDefinitionMetric} onBack={() => navigate('kpi')} onChooseMetric={setKpiDefinitionMetric} onDrill={openKpiListFromDefinition} /> : activeView === 'positions' ? <PositionsPage session={session} schools={schools} onOpenPosition={openPositionByNumber} /> : activeView === 'future-positions' ? (isDataTeam && futureEnabled && session ? <FuturePositionsPage session={session} onOpenPosition={openPositionByNumber} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>{isDataTeam ? 'Future Positions is disabled. An administrator can turn it back on from Features.' : 'Access denied. Data team access is required.'}</span></div></section>) : activeView === 'settings' ? (isAdmin && session ? <SettingsPage session={session} schools={schools} onFlagsChanged={applyFlags} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : activeView === 'ai' ? (aiEnabled && session ? <AiAssistantPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. The AI Assistant is disabled.</span></div></section>) : activeView === 'style-config' ? (styleConfigEnabled && session ? <StyleConfigurationPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Style Configuration is disabled.</span></div></section>) : activeView === 'features' ? (isAdmin && session ? <FeaturesPage session={session} onFlagsChanged={applyFlags} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : <>
+      {activeView === 'reports' ? <ReportsPage schools={schools} session={session} onManage={isAdmin ? () => navigate('settings') : undefined} onOpenRecord={openRecordByEmployeeNumber} onOpenPosition={openPositionByNumber} /> : activeView === 'kpi' ? <KpiDashboardPage session={session} schools={schools} schoolId={kpiSchoolId} onSchoolChange={setKpiSchoolId} pendingRequest={kpiPendingRequest} onPendingHandled={() => setKpiPendingRequest(null)} onDrill={openKpiList} onDefine={openKpiDefinition} /> : activeView === 'kpi-drilldown' ? (kpiTarget ? <KpiDrilldownPage session={session} target={kpiTarget} onBack={() => navigate('kpi')} onDefine={openKpiDefinition} onOpenPosition={openPositionByNumber} onOpenRecord={openRecordByEmployeeNumber} /> : <section className="reports-page"><div className="empty-state"><AlertCircle size={26} /><p>Pick a tile or a bar on the KPI dashboard to open a list.</p></div><button className="back-button" onClick={() => navigate('kpi')}><ArrowUpRight size={17} />KPI dashboard</button></section>) : activeView === 'kpi-definition' ? <KpiDefinitionPage metric={kpiDefinitionMetric} onBack={() => navigate('kpi')} onChooseMetric={setKpiDefinitionMetric} onDrill={openKpiListFromDefinition} /> : activeView === 'positions' ? <PositionsPage session={session} schools={schools} onOpenPosition={openPositionByNumber} /> : activeView === 'advanced-search' ? <AdvancedSearchPage session={session} schools={schools} onOpenPosition={openPositionByNumber} /> : activeView === 'future-positions' ? (isDataTeam && futureEnabled && session ? <FuturePositionsPage session={session} onOpenPosition={openPositionByNumber} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>{isDataTeam ? 'Future Positions is disabled. An administrator can turn it back on from Features.' : 'Access denied. Data team access is required.'}</span></div></section>) : activeView === 'settings' ? (isAdmin && session ? <SettingsPage session={session} schools={schools} onFlagsChanged={applyFlags} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : activeView === 'ai' ? (aiEnabled && session ? <AiAssistantPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. The AI Assistant is disabled.</span></div></section>) : activeView === 'style-config' ? (styleConfigEnabled && session ? <StyleConfigurationPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Style Configuration is disabled.</span></div></section>) : activeView === 'features' ? (isAdmin && session ? <FeaturesPage session={session} onFlagsChanged={applyFlags} onManageSystemMessages={() => navigate('system-messages')} onManageSystemInfo={() => navigate('system-info')} onManageStyleConfig={() => navigate('style-config')} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>Access denied. Admin access is required.</span></div></section>) : activeView === 'system-messages' ? (isAdmin && systemMessagesEnabled && session ? <SystemMessagesPage session={session} onBack={() => navigate('features')} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>{isAdmin ? 'System-wide messages are disabled. An administrator can turn them back on from Features.' : 'Access denied. Admin access is required.'}</span></div></section>) : activeView === 'system-info' ? (isAdmin && systemInfoEnabled && session ? <SystemInfoPage session={session} /> : <section className="reports-page"><div className="notice error"><AlertCircle size={18} /><span>{isAdmin ? 'System Information is disabled. An administrator can turn it back on from Features.' : 'Access denied. Admin access is required.'}</span></div></section>) : <>
       <section className="hero-band">
         <div>
           <p className="eyebrow">People directory</p>

@@ -23,7 +23,19 @@ INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('ai_assis
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('employee_auto_lookup', 0, datetime('now'));
 -- Style Configuration: admin-authored CSS styles staff can apply. Ships OFF.
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('style_configuration', 0, datetime('now'));
--- KPI Dashboard: the one OPT-OUT flag. It ships ON because the dashboard is
+-- KPI Dashboard: an OPT-OUT flag. It ships ON because the dashboard is
 -- already live; GET /api/feature-flags also reports 1 when this row is absent,
 -- so an unseeded database never hides the page. Set to 0 to hide the nav link.
 INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('kpi_dashboard', 1, datetime('now'));
+-- System-wide messages (Splash / Banner announcements): a second OPT-OUT flag.
+-- The manager is already in use, so it ships ON, and an absent row also reads
+-- as 1. Set to 0 to hide the manager and stop showing published messages.
+INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('system_messages', 1, datetime('now'));
+-- System Information: an OPT-IN admin diagnostic that compares the nightly
+-- loader log with the live row counts. Ships OFF because it is a beta; an
+-- absent row reads as 0. Reachable only from the Features page.
+INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('system_info', 0, datetime('now'));
+-- Advanced Search: an OPT-IN structured position search. Ships OFF until an
+-- admin turns it on, so an absent row reads as 0 and the nav entry stays
+-- hidden. Turning it off hides the page without removing the routes.
+INSERT OR IGNORE INTO feature_flags (key, enabled, updated_at) VALUES ('advanced_search', 0, datetime('now'));
