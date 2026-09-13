@@ -755,6 +755,11 @@ export const openApiDocument = {
           '`organization` is required and must be visible to the caller. ' +
           '`positionType` is `all` (default), `filled` or `vacant`. Setting `positionType = vacant` ' +
           'clears `contractStart`/`contractEnd`, because a vacant position has no contract at all. ' +
+          'Only **open, funded seats** are searched: a seat whose `pos_ending` has already passed ' +
+          'is historical, and a seat whose position number starts `888` is a placeholder, so both ' +
+          'are excluded from `all`, `filled` **and** `vacant`. This is the same definition the KPI ' +
+          'dashboard and the Open Positions report use, so the three surfaces agree. Scoping `all` ' +
+          'along with the two halves is what preserves `all` = `filled` + `vacant`. ' +
           'Results are capped at 2000 rows; `truncated` flags a capped response. ' +
           'Vacant rows carry a blank `Emp No.` and blank contract dates, and `Vacant` is true so ' +
           'the client can render the vacancy badge instead of a name.',
@@ -785,7 +790,9 @@ export const openApiDocument = {
           'DISTINCT position names, the contract types that actually occur in the school ' +
           '(with a row count so each option shows what it would return) and the DISTINCT ' +
           'contract codes. Options come from the data, so a school never offers a filter ' +
-          'that would return nothing.',
+          'that would return nothing. The population is restricted to the same open, funded ' +
+          'seats the search itself returns, so an option can never promise rows the table ' +
+          'cannot produce.',
         parameters: [
           {
             name: 'organization',
@@ -1670,7 +1677,9 @@ export const openApiDocument = {
               '`vacant` means no incumbent (no full name AND no employee number). Selecting ' +
               '`vacant` clears the contract date filters and `personStart`, because a vacant ' +
               'seat has no contract and no incumbent. `positionStart` is kept — it belongs to ' +
-              'the seat.'
+              'the seat. All three values describe the same **open, funded** seat population: ' +
+              'seats that have already ended and `888…` placeholder seats are excluded, so ' +
+              '`all` is always `filled` + `vacant`.'
           },
           contractTypes: {
             type: 'array',

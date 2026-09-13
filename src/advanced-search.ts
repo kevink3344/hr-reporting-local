@@ -140,8 +140,82 @@ export function normalizeAdvancedSearchFilters(input: {
   return filters;
 }
 
+// ---------------------------------------------------------------------------
+// Seat scope — which seats are "positions" at all.
+//
+// Asking only "does this seat have an incumbent?" is NOT the same question as
+// "is this seat vacant". Measured live at Athens High School: 72 seats had no
+// incumbent, but 38 of them had already ENDED and 9 more are `888…` placeholder
+// seats, so the true vacancy count is 25 — which is what the KPI dashboard
+// reports. Advanced Search was the only surface missing these two clauses, so
+// it was the only surface that disagreed.
+//
+// The definitions are the same ones the KPI dashboard and the Open Positions
+// report use (`OPEN_SEAT_SQL` / `NOT_PLACEHOLDER_SQL` in `src/kpi-definitions.ts`).
+// Three surfaces, one definition — otherwise they drift apart on screen and
+// each looks like a bug in turn.
+//
+// Turso is SQLite, so it has no `NOW()`: it compares against `date('now')`.
+// `0000-00-00` is MySQL's "no date here" sentinel and means open-ended, as does
+// a NULL/absent ending.
+// ---------------------------------------------------------------------------
+
+/** A seat is open when it has not ended yet. */
+function openSeatSql(dialect: AdvancedSearchDialect): string {
+  return dialect === 'turso'
+    ? "(pi.pos_ending > date('now') OR IFNULL(pi.pos_ending, '0000-00-00') LIKE '0000-00-00%')"
+    : "(pi.pos_ending > NOW() OR IFNULL(pi.pos_ending, '0000-00-00') LIKE '0000-00-00%')";
+}
+
+/** `888…` position numbers are placeholder seats, not funded positions. */
+const PLACEHOLDER_POS_PREFIX = '888';
+
+const NOT_PLACEHOLDER_SQL = `pi.pos_number NOT LIKE '${PLACEHOLDER_POS_PREFIX}%'`;
+
+/** `0000-00-00` — the sentinel these tables store for "no date here". */
+const ZERO_DATE_PREFIX = '0000-00-00';
+
+/** The seat-scope clauses for one dialect, in a fixed order. */
+function seatScopeClauses(dialect: AdvancedSearchDialect): string[] {
+  return [openSeatSql(dialect), NOT_PLACEHOLDER_SQL];
+}
+
+/** Today as ISO text, so it compares lexicographically against an ISO date. */
+function todayIso(): string {
+  return toIsoDate(new Date());
+}
+
+/** The in-memory twin of `openSeatSql`. */
+export function isSeatOpen(posEnding: string | Date | null | undefined, today: string): boolean {
+  const ending = toIsoDate(posEnding);
+  // No ending recorded means an open-ended seat — the same reading the SQL
+  // gives `IFNULL(pi.pos_ending, '0000-00-00')`.
+  if (ending === '' || ending.startsWith(ZERO_DATE_PREFIX)) return true;
+  return ending > today;
+}
+
+/** The in-memory twin of `NOT_PLACEHOLDER_SQL`. */
+export function isPlaceholderPosNumber(posNumber: string | number | null | undefined): boolean {
+  return String(posNumber ?? '').trim().startsWith(PLACEHOLDER_POS_PREFIX);
+}
+
+/**
+ * The in-memory twin of the whole seat scope. Exported because the fixture
+ * source applies it twice: once per row in `matchesAdvancedSearchFilters` and
+ * once to the population the filter dropdowns are counted from. If those two
+ * disagreed the dropdown would offer an option that can return no rows.
+ */
+export function isSearchableSeat(
+  row: Pick<AdvancedSearchSourceRow, 'posNumber' | 'posEnding'>
+): boolean {
+  return !isPlaceholderPosNumber(row.posNumber) && isSeatOpen(row.posEnding, todayIso());
+}
+
 /** SQL predicate fragments plus their positional bind values, in lock-step. */
-export function buildAdvancedSearchWhere(filters: AdvancedSearchFilters): { clauses: string[]; params: unknown[] } {
+export function buildAdvancedSearchWhere(
+  filters: AdvancedSearchFilters,
+  dialect: AdvancedSearchDialect
+): { clauses: string[]; params: unknown[] } {
   const clauses: string[] = ['pi.organization = ?'];
   const params: unknown[] = [filters.organization];
 
@@ -149,6 +223,17 @@ export function buildAdvancedSearchWhere(filters: AdvancedSearchFilters): { clau
     clauses.push('pi.pos_name = ?');
     params.push(filters.positionName);
   }
+
+  // Applied to EVERY Position Type, `all` included. Filled and Vacant are the
+  // two halves of All, so scoping the halves but not the whole would leave the
+  // dropdown unable to describe its own rows (`All` would list seats that are
+  // neither Filled nor Vacant). It is also what preserves the invariant the KPI
+  // dashboard guarantees and asserts: Authorized = Filled + Vacant.
+  //
+  // Position Name and Position Start above stay outside the scope on purpose:
+  // they are user-chosen values, and a Name filter already narrows to real
+  // titles.
+  clauses.push(...seatScopeClauses(dialect));
 
   if (filters.positionType === 'filled') {
     clauses.push("(TRIM(IFNULL(e.full_name, '')) <> '' OR TRIM(IFNULL(e.emp_number, '')) <> '')");
@@ -221,7 +306,7 @@ export function buildAdvancedSearchSql(
   filters: AdvancedSearchFilters,
   dialect: AdvancedSearchDialect
 ): { text: string; params: unknown[] } {
-  const { clauses, params } = buildAdvancedSearchWhere(filters);
+  const { clauses, params } = buildAdvancedSearchWhere(filters, dialect);
   // DISTINCT is required, not cosmetic: employee_info holds genuine duplicate
   // rows (same person, same position, same contract dates), so the LEFT JOIN
   // emits the same position twice. Measured live against the production
@@ -264,6 +349,12 @@ LIMIT ?;`;
  * contract type simply doesn't offer it — an option that can return zero rows
  * is noise. Descriptions fall back to `describeContractType` when the row's
  * tenure_desc is blank.
+ *
+ * All three queries carry the seat scope, for the same reason the search does:
+ * an option counted over seats the search will not return is an option that
+ * promises rows the table cannot produce. It is not cosmetic — without this a
+ * title that exists only on seats that have ended stays in the Position Name
+ * dropdown and always returns nothing.
  */
 export function buildAdvancedSearchOptionQueries(
   organization: string,
@@ -273,12 +364,15 @@ export function buildAdvancedSearchOptionQueries(
   contractTypes: { text: string; params: unknown[] };
   contractCodes: { text: string; params: unknown[] };
 } {
+  const seatScope = seatScopeClauses(dialect).join('\n    AND ');
+
   const positionNames = {
     text: `
 SELECT DISTINCT pi.pos_name AS pos_name
 FROM position_info pi
 WHERE pi.organization = ?
   AND TRIM(IFNULL(pi.pos_name, '')) <> ''
+  AND ${seatScope}
 ORDER BY pi.pos_name;`,
     params: [organization]
   };
@@ -305,6 +399,7 @@ FROM (
 ${positionJoin(dialect)}
   WHERE pi.organization = ?
     AND TRIM(IFNULL(e.contract_type, '')) <> ''
+    AND ${seatScope}
 ) t
 GROUP BY code, description
 ORDER BY code;`,
@@ -318,6 +413,7 @@ FROM position_info pi
 ${positionJoin(dialect)}
 WHERE pi.organization = ?
   AND TRIM(IFNULL(e.tenure_code, '')) <> ''
+  AND ${seatScope}
 ORDER BY e.tenure_code;`,
     params: [organization]
   };
@@ -481,12 +577,19 @@ export function toAdvancedSearchRow(source: AdvancedSearchSourceRow): AdvancedSe
   };
 }
 
-/** The same rules as `buildAdvancedSearchWhere`, for the fixture source. */
+/**
+ * The same rules as `buildAdvancedSearchWhere`, for the fixture source —
+ * including the seat scope, so a fixture seat that has ended or that carries a
+ * `888…` number is excluded here exactly as the SQL excludes it. `posEnding` is
+ * optional on a fixture row; omitting it means "open-ended", which is what the
+ * SQL reads out of a NULL ending.
+ */
 export function matchesAdvancedSearchFilters(
   row: AdvancedSearchSourceRow,
   filters: AdvancedSearchFilters
 ): boolean {
   if (row.organization !== filters.organization) return false;
+  if (!isSearchableSeat(row)) return false;
 
   const occupied = isPositionOccupied(row.fullName, row.employeeNumber);
 

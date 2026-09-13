@@ -327,6 +327,13 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 .export-format-option-label { flex: 1; line-height: 1.15; }
 .export-format-option-label small { color: #8c857a; font-weight: 400; font-size: 10px; }
 .export-format-option.active .export-format-option-label small { color: #56746c; }
+/* The trigger and Export buttons need the same dark treatment as the menu they
+   open. Without these they kept their light-mode colours (near-white trigger,
+   dark-green Export) on a dark page. */
+[data-theme="dark"] .export-button { color: #14110d; background: #6fbfa8; }
+[data-theme="dark"] .export-button:hover { color: #14110d; background: #7ecbb5; }
+[data-theme="dark"] .export-button--secondary { color: #7ecbb5; border-color: #3a332a; background: #241f19; }
+[data-theme="dark"] .export-button--secondary:hover { color: #7ecbb5; background: #2a332e; }
 [data-theme="dark"] .export-format-menu { border-color: #3a332a; background: #1c1813; box-shadow: 0 12px 28px rgba(0,0,0,.5); }
 [data-theme="dark"] .export-format-option { color: #e8e2d7; }
 [data-theme="dark"] .export-format-option:hover { background: #2e2820; }
@@ -2850,12 +2857,21 @@ td:first-child .badge-vacant,
 .advanced-search-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: 22px; }
 .advanced-search-actions .primary-button:disabled { cursor: not-allowed; opacity: .55; }
 .advanced-search-actions .link-button:disabled { cursor: not-allowed; color: #b0a597; }
-.advanced-search-toolbar { justify-content: space-between; }
+/* Everything in the results toolbar flows from the left — filter, column picker,
+   then the export control — instead of `space-between` pushing Columns into the
+   middle of the page and the export buttons to the far right. */
+.advanced-search-toolbar { justify-content: flex-start; }
 .advanced-search-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 22px; }
 .advanced-search-summary-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Own line inside the flex summary row; `flex-basis` rather than width so it
+   still wraps correctly when the row itself wraps on a narrow viewport. */
+.advanced-search-scope-note { flex-basis: 100%; color: #8c857a; font-size: 12px; line-height: 1.5; }
 .filter-pill { padding: 3px 10px; color: #2e5e56; border: 1px solid #b7c9c1; border-radius: 999px; background: #edf3ee; font-size: 11px; font-weight: 600; }
 .advanced-search-name-cell { font-weight: 500; }
 .advanced-search-row--vacant td { color: #756f66; }
+/* The shared `.empty-state` centres its contents, which floats on a page that is
+   otherwise flush left. Scope the override so every other page keeps it. */
+.advanced-search-page .empty-state { place-items: start; text-align: left; }
 
 /* Recent-search chips. Advanced Search renders the pill as a container holding
    two buttons (replay + remove), so the pill itself carries the styling and the
@@ -2872,7 +2888,6 @@ td:first-child .badge-vacant,
 .toolbar-button { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 13px; color: #2e5e56; border: 1px solid #b7c9c1; border-radius: 8px; background: #fffdf8; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .toolbar-button:hover { background: #edf3ee; }
 .toolbar-button:disabled { cursor: not-allowed; opacity: .5; }
-.export-buttons { display: inline-flex; align-items: center; gap: 8px; }
 .columns-menu { position: relative; }
 .columns-popover { position: absolute; z-index: 12; top: calc(100% + 6px); left: 0; display: grid; gap: 2px; min-width: 210px; padding: 8px; border: 1px solid #d9d0c1; border-radius: 10px; background: #fffdf8; box-shadow: 0 14px 30px rgba(38, 35, 31, .12); }
 .columns-option { display: flex; align-items: center; gap: 9px; padding: 8px 10px; cursor: pointer; color: #38342f; border-radius: 7px; font-size: 13px; }
@@ -2894,6 +2909,7 @@ td:first-child .badge-vacant,
 [data-theme="dark"] .advanced-search-field input[type="date"]:disabled { color: #7d7466; background: #1c1813; }
 [data-theme="dark"] .advanced-search-hint,
 [data-theme="dark"] .advanced-search-note { color: #9b9284; }
+[data-theme="dark"] .advanced-search-scope-note { color: #9b9284; }
 [data-theme="dark"] .advanced-search-actions .link-button:disabled { color: #6b6357; }
 [data-theme="dark"] .filter-pill { color: #7ecbb5; border-color: #2e5e56; background: #24332e; }
 [data-theme="dark"] .advanced-search-row--vacant td { color: #9b9284; }

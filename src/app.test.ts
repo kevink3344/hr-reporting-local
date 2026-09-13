@@ -21,6 +21,9 @@ import {
   ADVANCED_SEARCH_ROW_CAP,
   buildAdvancedSearchOptionQueries,
   buildAdvancedSearchSql,
+  isPlaceholderPosNumber,
+  isSearchableSeat,
+  isSeatOpen,
   normalizeAdvancedSearchFilters
 } from './advanced-search.js';
 
@@ -1557,6 +1560,58 @@ describe('Advanced Search API', () => {
     expect(body.contractCodes).toEqual(['2027', '2028', '9999']);
   });
 
+  // -------------------------------------------------------------------------
+  // Seat scope: a seat that has ENDED, or that carries an `888…` placeholder
+  // number, is not a position any more and must not appear in any result.
+  //
+  // These are the tests that would have caught the reported bug. Live at Athens
+  // High School the incumbent-only predicate reported 72 vacancies against a
+  // true count of 25: 38 of those seats had already ended and 9 more were
+  // placeholders. The fixture seed carries one of each (1011, 1012, 8881013).
+  // -------------------------------------------------------------------------
+  it('excludes ended seats and 888 placeholder seats from every Position Type', async () => {
+    const scopedOut = ['1011', '1012', '8881013'];
+    for (const positionType of ['all', 'filled', 'vacant'] as const) {
+      const body = await (await search({ organization: OAK, positionType })).json();
+      const numbers = body.rows.map((row: { 'Pos No': string }) => row['Pos No']);
+      for (const excluded of scopedOut) expect(numbers).not.toContain(excluded);
+    }
+  });
+
+  it('keeps All equal to Filled plus Vacant, which is what scoping the halves requires', async () => {
+    const [all, filled, vacant] = await Promise.all(
+      (['all', 'filled', 'vacant'] as const).map(async (positionType) =>
+        (await (await search({ organization: OAK, positionType })).json()).total
+      )
+    );
+    // If the seat scope were applied to Filled and Vacant but not to All, this
+    // is the assertion that fails — All would list seats that are neither.
+    expect(filled + vacant).toBe(all);
+    // And the seed's own arithmetic, which the scope leaves alone.
+    expect({ all, filled, vacant }).toEqual({ all: 7, filled: 5, vacant: 2 });
+  });
+
+  it('does not offer filter options that only exist on seats outside the scope', async () => {
+    const body = await (await fetch(
+      `${baseUrl}/api/advanced-search/options?organization=${encodeURIComponent(OAK)}`
+    )).json();
+    // `Custodian` occurs ONLY on the two ended seats, so offering it would hand
+    // the user an option that can never return a row.
+    expect(body.positionNames).not.toContain('Custodian');
+    // `2030` sits only on the ended-but-filled seat, and that seat is the only
+    // other source of `NC` — so an unscoped count would read 2 here.
+    expect(body.contractCodes).not.toContain('2030');
+    expect(body.contractTypes.find((type: { code: string }) => type.code === 'NC')).toMatchObject({ count: 1 });
+  });
+
+  it('leaves a school whose seats are all in scope at its unscoped totals', async () => {
+    // Test River High's only seat-scope fixture is the open vacant 1009, so its
+    // totals are the pre-scope ones — proof the scope is not over-reaching.
+    const body = await (await search({ organization: RIVER })).json();
+    expect(body.total).toBe(3);
+    expect(body.rows.map((row: { 'Pos No': string }) => row['Pos No']).sort()).toEqual(['1004', '1009', '1010']);
+  });
+
   it('rejects missing organization and out-of-scope callers for options', async () => {
     expect((await fetch(`${baseUrl}/api/advanced-search/options`)).status).toBe(400);
     const scoped = { 'x-user-school-ids': 'school-001', 'x-user-view-all': '0' };
@@ -1571,6 +1626,88 @@ describe('Advanced Search API', () => {
     expect(document.paths['/advanced-search/options'].get.operationId).toBe('getAdvancedSearchOptions');
     expect(document.paths['/advanced-search'].post.responses['200'].content['application/json'].schema.$ref)
       .toBe('#/components/schemas/AdvancedSearchResult');
+  });
+});
+
+/**
+ * The seat scope is the fix for the reported vacancy mismatch: Advanced Search
+ * asked only "does this seat have an incumbent?", so a seat that ended in 2021
+ * with no employee row counted as Vacant. The KPI dashboard and the Open
+ * Positions report both additionally require the seat to be open and to not be
+ * an `888…` placeholder. These tests pin the shared vocabulary that keeps the
+ * three surfaces in agreement.
+ */
+describe('Advanced Search seat scope', () => {
+  const today = '2026-09-13';
+
+  it('reads a past ending as closed and a future, blank or zero ending as open', () => {
+    expect(isSeatOpen('2025-06-30', today)).toBe(false);
+    expect(isSeatOpen('2026-06-30', today)).toBe(false);
+    expect(isSeatOpen(today, today)).toBe(false);
+    expect(isSeatOpen('2027-06-30', today)).toBe(true);
+
+    // `0000-00-00` is the stored "no date here" sentinel and means open-ended,
+    // which is exactly how the SQL reads IFNULL(pi.pos_ending, '0000-00-00').
+    expect(isSeatOpen('0000-00-00', today)).toBe(true);
+    expect(isSeatOpen('', today)).toBe(true);
+    expect(isSeatOpen(undefined, today)).toBe(true);
+    expect(isSeatOpen(null, today)).toBe(true);
+
+    // mysql2 hands back Date objects for DATE columns, and `YYYY-MM-DD hh:mm:ss`
+    // is the shape the other driver returns; both must reduce to a date.
+    expect(isSeatOpen(new Date(2027, 5, 30), today)).toBe(true);
+    expect(isSeatOpen('2027-06-30 00:00:00', today)).toBe(true);
+  });
+
+  it('reads an 888 prefix as a placeholder seat and nothing else', () => {
+    expect(isPlaceholderPosNumber('888')).toBe(true);
+    expect(isPlaceholderPosNumber('8881013')).toBe(true);
+    expect(isPlaceholderPosNumber(8881013)).toBe(true);
+    // A plain `LIKE '888%'` is a prefix test, not an equality test.
+    expect(isPlaceholderPosNumber('8880')).toBe(true);
+    // Real seat numbers that merely contain 888 are not placeholders.
+    expect(isPlaceholderPosNumber('1011')).toBe(false);
+    expect(isPlaceholderPosNumber('18881')).toBe(false);
+    expect(isPlaceholderPosNumber('101888')).toBe(false);
+    expect(isPlaceholderPosNumber('')).toBe(false);
+    expect(isPlaceholderPosNumber(null)).toBe(false);
+  });
+
+  it('requires both halves before calling a seat searchable', () => {
+    // Time-independent: 1900 is in the past whenever this runs, 2999 is not.
+    expect(isSearchableSeat({ posNumber: '1011', posEnding: '1900-01-01' })).toBe(false);
+    expect(isSearchableSeat({ posNumber: '1011', posEnding: '2999-01-01' })).toBe(true);
+    expect(isSearchableSeat({ posNumber: '8881013', posEnding: '2999-01-01' })).toBe(false);
+    expect(isSearchableSeat({ posNumber: '8881013', posEnding: '1900-01-01' })).toBe(false);
+    // Fixture rows omit `posEnding` when the seat is open-ended, which must
+    // stay searchable rather than silently disappearing.
+    expect(isSearchableSeat({ posNumber: '1011' })).toBe(true);
+  });
+
+  it('puts the seat scope into the search SQL for every Position Type', () => {
+    for (const dialect of ['turso', 'mysql'] as const) {
+      for (const positionType of ['all', 'filled', 'vacant'] as const) {
+        const filters = normalizeAdvancedSearchFilters({ organization: 'Test Oak Elementary', positionType });
+        const { text } = buildAdvancedSearchSql(filters, dialect);
+        expect(text).toContain("pi.pos_number NOT LIKE '888%'");
+        expect(text).toMatch(
+          dialect === 'turso' ? /pi\.pos_ending > date\('now'\)/ : /pi\.pos_ending > NOW\(\)/
+        );
+        // The zero-date escape hatch has to survive in both dialects, or an
+        // open-ended seat (`0000-00-00`) vanishes from every result.
+        expect(text).toContain("IFNULL(pi.pos_ending, '0000-00-00') LIKE '0000-00-00%'");
+      }
+    }
+  });
+
+  it('puts the seat scope into all three option queries', () => {
+    for (const dialect of ['turso', 'mysql'] as const) {
+      const queries = buildAdvancedSearchOptionQueries('Test Oak Elementary', dialect);
+      for (const query of [queries.positionNames, queries.contractTypes, queries.contractCodes]) {
+        expect(query.text).toContain("pi.pos_number NOT LIKE '888%'");
+        expect(query.text).toContain('pi.pos_ending >');
+      }
+    }
   });
 });
 

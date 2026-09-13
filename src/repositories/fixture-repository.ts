@@ -58,6 +58,7 @@ import type { AdvancedSearchFilters, AdvancedSearchOptions, AdvancedSearchResult
 import {
   buildAdvancedSearchResult,
   isPositionOccupied,
+  isSearchableSeat,
   matchesAdvancedSearchFilters,
   toAdvancedSearchOptions,
   type AdvancedSearchSourceRow
@@ -94,6 +95,12 @@ function isoDaysFromToday(days: number): string {
 // and 500 (outside 180).
 const FIXTURE_OPEN_SEAT = isoDaysFromToday(-30);
 const FIXTURE_SEAT_ENDING = isoDaysFromToday(300);
+/**
+ * A seat that has already ENDED. Advanced Search excludes these (they are not
+ * positions any more), so a `posEnding` in the past is the difference between a
+ * seat that is vacant and a seat that no longer exists — see `isSeatOpen`.
+ */
+const FIXTURE_ENDED_SEAT = isoDaysFromToday(-365);
 
 type FixtureKpiSeed = {
   posNumber: string;
@@ -250,6 +257,11 @@ async function openPositions(organization: string): Promise<OpenPositionRow[]> {
 // every contract type, the vacant path, and a part-time `tap` (see posNumber
 // 1003) — the case that made the Contract Report and Advanced Search disagree.
 //
+// The last three rows in the array are SEAT-SCOPE fixtures: a seat that has
+// ended (vacant), a seat that has ended (filled), and an `888…` placeholder.
+// None of them is a position any more, so none of them may appear in a result
+// or in the filter options — see `isSearchableSeat`.
+//
 // Contract codes are the real ones from docs/columns/col-values.md
 // (T, NC, 1Y, 2Y, C, 4E) — NOT the fixture-only 'N Code'/'Regular' vocabulary
 // used by the Open Positions seed.
@@ -264,13 +276,15 @@ const fixtureSearchRows: AdvancedSearchSourceRow[] = [
     contractStart: '2024-07-01', contractEnd: '2025-06-30'
   },
   {
-    // Vacant — no incumbent, therefore no contract dates at all.
+    // Vacant — no incumbent, therefore no contract dates at all. The ending is
+    // in the FUTURE, which is what keeps this a vacant seat rather than a seat
+    // that has closed (see `isSeatOpen`).
     organization: 'Test Oak Elementary', posName: 'Assistant Principal', posNumber: '1002',
     fullName: '', employeeNumber: '',
     contractType: '', tenureCode: '',
     tap: null,
     contractStart: '2025-07-01', contractEnd: '2026-06-30',
-    posStart: '2025-07-01', posEnding: '2026-06-30'
+    posStart: '2025-07-01', posEnding: FIXTURE_SEAT_ENDING
   },
   {
     organization: 'Test Oak Elementary', posName: 'Principal', posNumber: '1003',
@@ -294,13 +308,15 @@ const fixtureSearchRows: AdvancedSearchSourceRow[] = [
     contractStart: '2025-07-01', contractEnd: '2026-06-30'
   },
   {
-    // Vacant.
+    // Vacant, and with NO `posEnding` at all. That is not an oversight: an
+    // absent ending is how both sources spell "open-ended", so this row is the
+    // fixture that proves the omitted-ending path stays vacant.
     organization: 'Test Oak Elementary', posName: 'Counselor', posNumber: '1006',
     fullName: '', employeeNumber: '',
     contractType: '', tenureCode: '',
     tap: null,
     contractStart: '2025-07-01', contractEnd: '2026-06-30',
-    posStart: '2025-07-01', posEnding: '2026-06-30'
+    posStart: '2025-07-01'
   },
   {
     organization: 'Test Oak Elementary', posName: 'Teacher', posNumber: '1007',
@@ -329,13 +345,13 @@ const fixtureSearchRows: AdvancedSearchSourceRow[] = [
     contractStart: '2024-08-01', contractEnd: '2026-06-30'
   },
   {
-    // Vacant.
+    // Vacant. Open-ended in the future, like 1002.
     organization: 'Test River High', posName: 'Assistant Principal', posNumber: '1009',
     fullName: '', employeeNumber: '',
     contractType: '', tenureCode: '',
     tap: null,
     contractStart: '2025-07-01', contractEnd: '2026-06-30',
-    posStart: '2025-07-01', posEnding: '2026-06-30'
+    posStart: '2025-07-01', posEnding: FIXTURE_SEAT_ENDING
   },
   {
     // 4E has no description in the catalogue — exercises the blank fallback.
@@ -345,6 +361,47 @@ const fixtureSearchRows: AdvancedSearchSourceRow[] = [
     tap: 1,
     posStart: '2025-07-01', assignStart: '2025-07-01',
     contractStart: '2025-07-01', contractEnd: '2026-06-30'
+  },
+
+  // -------------------------------------------------------------------------
+  // Seat-scope rows. None of these three may ever appear in a result, for any
+  // Position Type. They exist because the OLD predicate asked only "does this
+  // seat have an incumbent?" and therefore reported both of the first two as
+  // vacancies — the reported bug, in fixture form.
+  // -------------------------------------------------------------------------
+  {
+    // Ended seat with no incumbent. The old predicate called this Vacant.
+    // `Custodian` is deliberately a title that appears nowhere else, so the
+    // Position Name dropdown proves the options are scoped too.
+    organization: 'Test Oak Elementary', posName: 'Custodian', posNumber: '1011',
+    fullName: '', employeeNumber: '',
+    contractType: '', tenureCode: '', tap: null,
+    contractStart: '', contractEnd: '',
+    posStart: '2016-07-01', posEnding: FIXTURE_ENDED_SEAT
+  },
+  {
+    // Ended seat WITH an incumbent — the other half of the defect. The old
+    // predicate counted this as Filled because an employee row exists, even
+    // though the seat closed a year ago. `NC`/`2030` are reused codes on
+    // purpose: if the scope leaks, this row pushes the NC option count to 2 and
+    // adds 2030 to the tenure-code list.
+    organization: 'Test Oak Elementary', posName: 'Custodian', posNumber: '1012',
+    fullName: 'Alvarez, Robin', employeeNumber: '900008',
+    contractType: 'NC', tenureCode: '2030', tap: 1,
+    posStart: '2016-07-01', assignStart: '2016-08-01',
+    contractStart: '2016-07-01', contractEnd: '2026-06-30',
+    posEnding: FIXTURE_ENDED_SEAT
+  },
+  {
+    // Open, vacant — and therefore kept out by the `888…` clause alone. The
+    // KPI dashboard and the Open Positions report both exclude these, so
+    // counting one here would put a seat in the vacancy total that no other
+    // surface acknowledges.
+    organization: 'Test Oak Elementary', posName: 'Teacher', posNumber: '8881013',
+    fullName: '', employeeNumber: '',
+    contractType: '', tenureCode: '', tap: null,
+    contractStart: '', contractEnd: '',
+    posStart: '2025-07-01', posEnding: FIXTURE_SEAT_ENDING
   }
 ];
 
@@ -358,7 +415,12 @@ async function advancedSearch(filters: AdvancedSearchFilters): Promise<AdvancedS
 }
 
 async function advancedSearchOptions(organization: string): Promise<AdvancedSearchOptions> {
-  const scoped = fixtureSearchRows.filter((row) => row.organization === organization);
+  // Scoped to searchable seats, exactly as the SQL option queries are: an
+  // option counted over seats the search will never return is an option that
+  // always comes back empty.
+  const scoped = fixtureSearchRows.filter(
+    (row) => row.organization === organization && isSearchableSeat(row)
+  );
 
   const counts = new Map<string, { code: string; description: string; count: number }>();
   for (const row of scoped) {

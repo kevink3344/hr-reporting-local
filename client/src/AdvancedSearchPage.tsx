@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Building2,
   CalendarClock,
+  Check,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -34,6 +35,9 @@ import type {
 } from './types';
 
 const REPORT_TITLE = 'Advanced Search';
+
+/** Same three formats, in the same order, as the Report Dashboard's export control. */
+type ExportFormat = 'excel' | 'csv' | 'pdf';
 
 type Filters = {
   positionName: string;
@@ -103,8 +107,12 @@ export function AdvancedSearchPage({
   const [view, setView] = useState<ViewDefinition | null>(null);
   const [filterInput, setFilterInput] = useState('');
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  // Excel stays the default, matching the Report Dashboard's export control.
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('excel');
   const [exporting, setExporting] = useState(false);
   const columnsRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const school = useMemo(() => schools.find((entry) => entry.id === schoolId) ?? null, [schools, schoolId]);
   const organization = school?.name ?? '';
@@ -326,13 +334,15 @@ export function AdvancedSearchPage({
   }
 
   useEffect(() => {
-    if (!columnsOpen) return;
+    if (!columnsOpen && !exportOpen) return;
     function onDocClick(event: MouseEvent) {
-      if (columnsRef.current && !columnsRef.current.contains(event.target as Node)) setColumnsOpen(false);
+      const target = event.target as Node;
+      if (columnsRef.current && !columnsRef.current.contains(target)) setColumnsOpen(false);
+      if (exportRef.current && !exportRef.current.contains(target)) setExportOpen(false);
     }
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [columnsOpen]);
+  }, [columnsOpen, exportOpen]);
 
   const exportRun = useMemo(() => {
     if (!result) return null;
@@ -345,12 +355,12 @@ export function AdvancedSearchPage({
     };
   }, [result, displayColumns, displayRows]);
 
-  async function runExport(kind: 'excel' | 'csv' | 'pdf') {
+  async function runExport() {
     if (!exportRun || exporting) return;
     setExporting(true);
     try {
-      if (kind === 'csv') await exportGenericReportToCsv(exportRun);
-      else if (kind === 'excel') await exportGenericReport(exportRun);
+      if (exportFormat === 'csv') await exportGenericReportToCsv(exportRun);
+      else if (exportFormat === 'excel') await exportGenericReport(exportRun);
       else await exportGenericReportToPdf(exportRun);
     } catch {
       setSearchError('The export could not be created.');
@@ -363,6 +373,8 @@ export function AdvancedSearchPage({
   // (type, start, end) is unavailable while Vacant is selected.
   const contractsDisabled = filters.positionType === 'vacant';
   const datesDisabled = contractsDisabled;
+  // Nothing to export until the search returns rows.
+  const exportsDisabled = displayRows.length === 0;
 
   return <section className="advanced-search-page" aria-labelledby="advanced-search-title">
     <div className="reports-page-heading">
@@ -577,10 +589,51 @@ export function AdvancedSearchPage({
               </div>
             )}
           </div>
-          <div className="export-buttons">
-            <button className="toolbar-button" onClick={() => void runExport('csv')} disabled={exporting || displayRows.length === 0} title="Export CSV"><CsvIcon />CSV</button>
-            <button className="toolbar-button" onClick={() => void runExport('excel')} disabled={exporting || displayRows.length === 0} title="Export Excel"><ExcelIcon />Excel</button>
-            <button className="toolbar-button" onClick={() => void runExport('pdf')} disabled={exporting || displayRows.length === 0} title="Export PDF"><PdfIcon />PDF</button>
+          {/* Same two-step flow as the Report Dashboard: pick a format, then
+              press Export. Both controls live in one left-grouped cluster so
+              the toolbar reads left to right. */}
+          <div className="export-controls" ref={exportRef}>
+            <div className="export-format-dropdown">
+              <button
+                className="export-button export-button--secondary"
+                onClick={() => setExportOpen((open) => !open)}
+                disabled={exportsDisabled}
+                aria-expanded={exportOpen}
+                aria-haspopup="listbox"
+                aria-label={`Export format: ${exportFormat}`}
+                title="Select export format"
+              >
+                {exportFormat === 'excel' ? <ExcelIcon /> : exportFormat === 'csv' ? <CsvIcon /> : <PdfIcon />}
+                <span>Select format</span>
+                <ChevronDown size={14} className={exportOpen ? 'chevron-open' : ''} />
+              </button>
+              {exportOpen && (
+                <div className="export-format-menu" role="listbox" aria-label="Export format">
+                  <button role="option" aria-selected={exportFormat === 'excel'} className={`export-format-option${exportFormat === 'excel' ? ' active' : ''}`} onClick={() => { setExportFormat('excel'); setExportOpen(false); }}>
+                    <span className="export-format-option-icon"><ExcelIcon size={16} /></span>
+                    <span className="export-format-option-label">Excel<br /><small>.xlsx</small></span>
+                    {exportFormat === 'excel' && <Check size={14} />}
+                  </button>
+                  <button role="option" aria-selected={exportFormat === 'csv'} className={`export-format-option${exportFormat === 'csv' ? ' active' : ''}`} onClick={() => { setExportFormat('csv'); setExportOpen(false); }}>
+                    <span className="export-format-option-icon"><CsvIcon size={16} /></span>
+                    <span className="export-format-option-label">CSV<br /><small>.csv</small></span>
+                    {exportFormat === 'csv' && <Check size={14} />}
+                  </button>
+                  <button role="option" aria-selected={exportFormat === 'pdf'} className={`export-format-option${exportFormat === 'pdf' ? ' active' : ''}`} onClick={() => { setExportFormat('pdf'); setExportOpen(false); }}>
+                    <span className="export-format-option-icon"><PdfIcon size={16} /></span>
+                    <span className="export-format-option-label">PDF<br /><small>.pdf</small></span>
+                    {exportFormat === 'pdf' && <Check size={14} />}
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              className="export-button"
+              onClick={() => void runExport()}
+              disabled={exporting || exportsDisabled}
+              aria-label={`Export to ${exportFormat.toUpperCase()}`}
+              title={`Export to ${exportFormat.toUpperCase()}`}
+            >Export</button>
           </div>
         </div>
 
@@ -597,6 +650,13 @@ export function AdvancedSearchPage({
             {!datesDisabled && filters.personStart && <span className="filter-pill">Person start {filters.personStart}</span>}
           </span>}
           <button className="link-button" onClick={resetFilters}><X size={14} />Clear filters</button>
+          {/* Open seats only. Without saying so, a user who counted 72 vacancies
+              somewhere else would read the lower number here as missing data. */}
+          <span className="advanced-search-scope-note">
+            Open positions only. Seats that have already ended, and placeholder seats whose
+            position number starts 888, are excluded — the same definition the KPI dashboard
+            and the Open Positions report use, so the counts agree.
+          </span>
         </div>
 
         {result.truncated && (
