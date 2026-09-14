@@ -2918,3 +2918,68 @@ td:first-child .badge-vacant,
 [data-theme="dark"] .columns-popover { border-color: #3a332a; background: #241f19; box-shadow: 0 14px 30px rgba(0, 0, 0, .4); }
 [data-theme="dark"] .columns-option { color: #e8e2d7; }
 [data-theme="dark"] .columns-option:hover { background: #2f2a22; }
+
+/* ---------- Advanced Search in a STYLED dark theme ----------
+   The block above is the DEFAULT style's brown dark palette. When a style is
+   active (data-style set) the rest of the app re-derives its surfaces from the
+   style tokens, but Advanced Search — and the toolbar/popover widgets it shares
+   with Reports — were never covered, so they stayed brown. These more-specific
+   rules put them on the style's dark palette too (WCPSS dark navy, not brown). */
+[data-theme="dark"][data-style] .advanced-search-panel {
+  border-color: var(--style-border-dark);
+  background: color-mix(in srgb, var(--style-surface-dark) 80%, transparent);
+}
+[data-theme="dark"][data-style] .advanced-search-label { color: var(--style-text-muted-dark); }
+[data-theme="dark"][data-style] .advanced-search-field select,
+[data-theme="dark"][data-style] .advanced-search-field input[type="date"] {
+  border-color: var(--style-border-dark);
+  color: var(--style-text-dark);
+  background: var(--style-surface-dark);
+}
+[data-theme="dark"][data-style] .advanced-search-field select:focus,
+[data-theme="dark"][data-style] .advanced-search-field input[type="date"]:focus {
+  border-color: var(--style-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--style-accent) 18%, transparent);
+}
+[data-theme="dark"][data-style] .advanced-search-field select:disabled,
+[data-theme="dark"][data-style] .advanced-search-field input[type="date"]:disabled {
+  color: var(--style-text-muted-dark);
+  background: var(--style-bg-dark);
+}
+[data-theme="dark"][data-style] .advanced-search-hint,
+[data-theme="dark"][data-style] .advanced-search-note,
+[data-theme="dark"][data-style] .advanced-search-scope-note { color: var(--style-text-muted-dark); }
+[data-theme="dark"][data-style] .advanced-search-row--vacant td { color: var(--style-text-muted-dark); }
+[data-theme="dark"][data-style] .advanced-search-actions .link-button:disabled { color: color-mix(in srgb, var(--style-text-muted-dark) 55%, transparent); }
+/* Shared toolbar widgets (Advanced Search results + Reports) */
+[data-theme="dark"][data-style] .link-button { color: var(--style-accent); }
+[data-theme="dark"][data-style] .link-button:hover { color: color-mix(in srgb, var(--style-accent) 82%, #fff); }
+[data-theme="dark"][data-style] .toolbar-button {
+  border-color: var(--style-border-dark);
+  color: var(--style-accent);
+  background: var(--style-surface-dark);
+}
+[data-theme="dark"][data-style] .toolbar-button:hover { background: var(--style-surface-dark-2); }
+[data-theme="dark"][data-style] .filter-pill {
+  border-color: var(--style-border-dark);
+  color: var(--style-accent);
+  background: var(--style-surface-dark-2);
+}
+[data-theme="dark"][data-style] .columns-popover {
+  border-color: var(--style-border-dark);
+  background: var(--style-surface-dark);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, .45);
+}
+[data-theme="dark"][data-style] .columns-option { color: var(--style-text-dark); }
+[data-theme="dark"][data-style] .columns-option:hover { background: var(--style-surface-dark-2); }
+[data-theme="dark"][data-style] .columns-option input { accent-color: var(--style-accent); }
+[data-theme="dark"][data-style] .recent-run-chip-main:focus-visible,
+[data-theme="dark"][data-style] .recent-run-remove:focus-visible { outline-color: var(--style-accent); }
+/* Remaining default-style leaks that show through on any styled dark page:
+   the topbar's secondary text, a recent-run's row/time meta, and the school
+   combobox chevron (which hard-codes the default style's brown accent). */
+[data-theme="dark"][data-style] .topbar-meta { color: var(--style-text-muted-dark); }
+[data-theme="dark"][data-style] .recent-run-meta { color: var(--style-text-muted-dark); }
+[data-theme="dark"][data-style] .school-combobox .combobox-chevron { color: var(--style-accent); }
+/* Loader ring: brand accent in place of the default style's green. */
+[data-theme="dark"][data-style] .loader { border-color: var(--style-border-dark); border-top-color: var(--style-accent); }

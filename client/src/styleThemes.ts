@@ -27,6 +27,13 @@ export type StyleDefinition = {
   radius: number;
   /** When true, the decorative background gradient is removed (clear, flat background). */
   noBackgroundImage: boolean;
+  /**
+   * Optional brand color used to tint the derived dark surfaces. Without it,
+   * dark mode darkens `backgroundColor` toward black — which turns a white
+   * background into a flat neutral grey. Setting it (e.g. WCPSS navy) makes
+   * dark mode carry the brand hue instead.
+   */
+  darkTint?: string;
   isDefault: boolean;
 };
 
@@ -101,6 +108,9 @@ export const WCPSS_STYLE: StyleDefinition = {
   textColor: '#525252',
   radius: 4,
   noBackgroundImage: true,
+  // Dark mode is tinted with the WCPSS navy (not a neutral darkening of the
+  // white background) so the dark theme reads as dark blue, matching the brand.
+  darkTint: '#165788',
   isDefault: false
 };
 
@@ -176,10 +186,20 @@ export function applyStyle(style: StyleDefinition | null): void {
   // Dark-mode variants, derived from the style's own palette so any style gets
   // a readable dark theme (light backgrounds become a deep tinted surface and
   // dark text becomes light).
-  root.style.setProperty('--style-bg-dark', darkenHex(style.backgroundColor, 0.88));
-  root.style.setProperty('--style-surface-dark', darkenHex(style.backgroundColor, 0.82));
-  root.style.setProperty('--style-surface-dark-2', darkenHex(style.backgroundColor, 0.76));
-  root.style.setProperty('--style-border-dark', darkenHex(style.backgroundColor, 0.66));
+  //
+  // A style may nominate `darkTint` (its brand hue) as the source for the dark
+  // surfaces. That keeps dark mode on-brand — e.g. WCPSS navy gives a dark blue
+  // theme — instead of the flat neutral grey you get from darkening a white
+  // background. Text variants stay derived from `textColor` and remain neutral
+  // light greys, which read cleanly on the tinted surfaces.
+  const darkTint = style.darkTint ?? style.backgroundColor;
+  const dark = style.darkTint
+    ? { bg: 0.7, surface: 0.56, surface2: 0.42, border: 0.24 }
+    : { bg: 0.88, surface: 0.82, surface2: 0.76, border: 0.66 };
+  root.style.setProperty('--style-bg-dark', darkenHex(darkTint, dark.bg));
+  root.style.setProperty('--style-surface-dark', darkenHex(darkTint, dark.surface));
+  root.style.setProperty('--style-surface-dark-2', darkenHex(darkTint, dark.surface2));
+  root.style.setProperty('--style-border-dark', darkenHex(darkTint, dark.border));
   root.style.setProperty('--style-text-dark', lightenHex(style.textColor, 0.86));
   root.style.setProperty('--style-text-muted-dark', lightenHex(style.textColor, 0.62));
   // Tighter control radius for styles that want crisp corners (e.g. WCPSS 4px).
@@ -204,6 +224,11 @@ export function loadLastAppliedStyle(): StyleDefinition {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<StyleDefinition>;
       if (parsed && typeof parsed.id === 'string' && typeof parsed.mainFont === 'string') {
+        // Shipped styles are the source of truth for their own definition, so a
+        // device that cached an older revision picks up palette changes (e.g. a
+        // new darkTint) instead of replaying a stale copy.
+        const shipped = BUILT_IN_STYLES.find((item) => item.id === parsed.id);
+        if (shipped) return shipped;
         return {
           id: parsed.id,
           name: typeof parsed.name === 'string' ? parsed.name : 'Default',
@@ -216,6 +241,7 @@ export function loadLastAppliedStyle(): StyleDefinition {
           textColor: typeof parsed.textColor === 'string' ? parsed.textColor : DEFAULT_STYLE.textColor,
           radius: typeof parsed.radius === 'number' ? parsed.radius : DEFAULT_STYLE.radius,
           noBackgroundImage: parsed.noBackgroundImage === true,
+          darkTint: typeof parsed.darkTint === 'string' ? parsed.darkTint : undefined,
           isDefault: parsed.id === 'default'
         };
       }
