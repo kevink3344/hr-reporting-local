@@ -208,6 +208,34 @@ Add a `SystemMessages` tag + paths/components to `src/openapi.ts` so `/api/docs`
   - `acknowledgeSplash()` sets `splashAcknowledged = true` (a component `ref`/state reset on `session?.user.id` change) so it shows **once per login**.
 - **Refresh on edits:** pass a `onSystemMessagesChanged` callback (or a `refreshKey` counter) down to `UserSettingsPage` so the drawer re-fetches after add/edit/delete and the strip/overlay update live.
 
+#### 6.2.1 Body rendering — legacy rich text (`client/src/systemMessageFormat.tsx`)
+
+An announcement body is **plain text** (§5), but `system_messages.message` has also
+held **Quill Delta documents** (`{"ops":[{"insert":"…","attributes":{"italic":true}}]}`)
+written by an earlier rich-text editor and left in place by the migration.
+Rendered verbatim those display as a wall of JSON in the banner — the bug fixed
+2026-09-14.
+
+`SystemMessageBody` (used by the banner and the splash) and
+`systemMessageToPlainText` (used by the manager's list preview and to seed the
+composer when editing) parse the body first:
+
+| Stored value | Rendered as |
+|---|---|
+| Anything that is not a JSON object with an `ops` array | plain text, unchanged — the banner keeps its `<span>`, the splash its `<p>` |
+| A Quill Delta | a `<div>` of `<p>` / `<ul>` / `<ol>` / `<blockquote>`, with `<em>`/`<strong>`/`<u>`/`<s>`/`<code>` inline runs |
+
+- **No `dangerouslySetInnerHTML`.** Emphasis is built as React elements, so the
+  body carries no injection surface; `<b>markup</b>` typed literally in a
+  plain-text message still renders as visible text. An `attributes.link` only
+  becomes an `<a>` when its href matches `^(https?://|mailto:)`.
+- Block-level attributes (`list`, `header`, `blockquote`) sit on the op that
+  holds the newline, not on the text — that is where they are read from.
+- A document's mandatory trailing newline is dropped so announcements do not end
+  with a blank paragraph; an interior blank line renders as `&nbsp;`.
+- Editing a legacy message flattens it to text in the textarea (bullets become
+  `• `), so saving converts that one message to plain text.
+
 ### 6.3 Files touched (client)
 
 | File | Change |
@@ -216,6 +244,7 @@ Add a `SystemMessages` tag + paths/components to `src/openapi.ts` so `/api/docs`
 | `client/src/api.ts` | Add `getSystemMessages`, `getSystemMessagesAll`, `createSystemMessage`, `updateSystemMessage`, `deleteSystemMessage` + a small `systemMessages` repo helper in `adminHeaders`. |
 | `client/src/UserSettingsPage.tsx` | Accept `session` + `isAdmin`; render the admin "System-wide messages" panel below the home-page picker. |
 | `client/src/App.tsx` | Load active messages; render banner strip + splash overlay; wire dismissal/acknowledgement. |
+| `client/src/systemMessageFormat.tsx` | `SystemMessageBody` + `systemMessageToPlainText` — plain-text bodies, with legacy Quill Delta rendered as real blocks (see §6.2.1). |
 | `client/src/styles.css` | `.system-banners`, `.system-banner`, `.system-splash-scrim`, `.system-splash`, dark-theme variants. |
 
 ### 6.4 Files touched (server)

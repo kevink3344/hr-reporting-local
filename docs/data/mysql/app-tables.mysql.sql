@@ -7,7 +7,7 @@
 -- This file is the single source of truth. It supersedes (and matches)
 -- the individual scripts previously placed in docs/sql/:
 --   feature-flags.mysql.sql, future-positions.mysql.sql,
---   system-messages.mysql.sql
+--   system-messages.mysql.sql, feature-storage.mysql.sql
 --
 -- Design decisions (agreed):
 --   ● String surrogate PKs  VARCHAR(64)  (matches existing app table style)
@@ -15,9 +15,24 @@
 --     layer (same as future_positions / system_messages / feature_flags)
 --   ● Booleans as TINYINT(1); timestamps as DATETIME(3)
 --   ● users.roles / users.schoolIds stored as comma-separated VARCHAR
---   ● Engine / charset rely on the server default (InnoDB + utf8mb4 on the
---     reporting host) — matches the existing docs/sql/*.mysql.sql scripts,
---     which also omit an explicit ENGINE / DEFAULT CHARSET clause.
+--   ● Engine / charset rely on the server default — matches the existing
+--     docs/sql/*.mysql.sql scripts, which also omit an explicit ENGINE /
+--     DEFAULT CHARSET clause.
+--     ⚠️  VERIFIED 2026-09-14: that default is **latin1 / latin1_swedish_ci**,
+--     NOT utf8mb4, on server 5.5.68-MariaDB. Every app table (users,
+--     reports, report_views, system_messages, feature_schemas, …) is latin1.
+--     MySQL's "latin1" is really cp1252, so accents (café, naïve) and
+--     typographic punctuation (– “ ”) survive, but CJK, Cyrillic, emoji and
+--     ✓ become '?'.
+--     The server runs sql_mode=IGNORE_SPACE — i.e. NON-STRICT — so that
+--     replacement is SILENT (warning only, warningStatus=2 on the affected
+--     row). The resulting string has the SAME LENGTH and is still valid JSON,
+--     so neither a length check nor a JSON.parse check detects it; only a
+--     value comparison (or reading SHOW WARNINGS) does.
+--     Consequence for the LONGTEXT JSON columns (schema_json, data_json,
+--     reports.highlight_rules/columns, system_messages.message): a payload
+--     containing non-cp1252 characters is corrupted on write with no error.
+--     ALTER … CONVERT TO CHARACTER SET utf8mb4 is the fix if that ever matters.
 --
 -- Idempotent: DROP TABLE IF EXISTS in FK-safe order to the reverse of the
 -- CREATE order, so re-running rebuilds cleanly. CREATE uses IF NOT EXISTS.
@@ -41,6 +56,8 @@ DROP TABLE IF EXISTS position_comments;
 DROP TABLE IF EXISTS position_pins;
 DROP TABLE IF EXISTS system_messages;
 DROP TABLE IF EXISTS future_positions;
+DROP TABLE IF EXISTS feature_values;
+DROP TABLE IF EXISTS feature_schemas;
 DROP TABLE IF EXISTS feature_flags;
 DROP TABLE IF EXISTS style_themes;
 DROP TABLE IF EXISTS users;
@@ -309,6 +326,54 @@ CREATE TABLE IF NOT EXISTS report_view_comments (
 );
 
 CREATE INDEX idx_comments_view ON report_view_comments(view_id, created_at);
+
+-- =====================================================================
+-- feature_schemas — generic feature storage: one row per FEATURE
+--   schema_json is a JSON-encoded field descriptor the app validates records
+--   against: { "fields":[{"key","type","required",...}], "scope":{...},
+--              "uniqueBy":[...], "listOrder":"..." }
+--   Lets a configuration-shaped feature ship WITHOUT a bespoke table.
+--   `key` / `value` are reserved words in MariaDB 5.5 — the column names
+--   (feature_key, data_json, scope_key) deliberately avoid them.
+--   See docs/plans/future-features.md §3 and docs/sql/feature-storage.mysql.sql.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS feature_schemas (
+  id           VARCHAR(64) PRIMARY KEY,
+  feature_key  VARCHAR(64) NOT NULL,
+  name         VARCHAR(128) NOT NULL,
+  description  VARCHAR(255) NULL,
+  version      INT NOT NULL DEFAULT 1,
+  schema_json  LONGTEXT NOT NULL,
+  is_active    TINYINT(1) NOT NULL DEFAULT 1,
+  created_by   VARCHAR(64) NULL,
+  created_at   DATETIME NOT NULL,
+  updated_at   DATETIME NOT NULL,
+  UNIQUE KEY idx_feature_schemas_key (feature_key)
+);
+
+-- =====================================================================
+-- feature_values — generic feature storage: one row per RECORD
+--   schema_id -> feature_schemas.id (logical, enforced in the app)
+--   scope_key is an opaque partition key ('report_id' or 'report_id:org')
+--   kept as ONE string so every feature can share this table.
+--   data_json is the payload, validated against the schema in the app.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS feature_values (
+  id          VARCHAR(64) PRIMARY KEY,
+  schema_id   VARCHAR(64) NOT NULL,
+  owner_id    VARCHAR(64) NULL,
+  scope_key   VARCHAR(255) NULL,
+  data_json   LONGTEXT NOT NULL,
+  is_active   TINYINT(1) NOT NULL DEFAULT 1,
+  created_at  DATETIME NOT NULL,
+  updated_at  DATETIME NOT NULL
+);
+
+-- reads are always "values for one schema, filtered by owner/scope, live only"
+CREATE INDEX idx_feature_values_schema       ON feature_values (schema_id, is_active);
+CREATE INDEX idx_feature_values_owner        ON feature_values (schema_id, owner_id);
+CREATE INDEX idx_feature_values_scope        ON feature_values (schema_id, scope_key);
+CREATE INDEX idx_feature_values_schema_scope ON feature_values (schema_id, scope_key, owner_id);
 
 -- =====================================================================
 -- Seed: the 3 fixture users from docs/data/users.json

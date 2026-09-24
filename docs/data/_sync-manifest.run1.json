@@ -1,0 +1,67 @@
+{
+  "syncedAt": "2026-09-14T13:27:28.091Z",
+  "source": {
+    "database": "reporting",
+    "orgs": [
+      "Broughton High School - 348",
+      "Neuse River Middle School - 410",
+      "Beaverdam Elementary School - 332"
+    ]
+  },
+  "target": "libsql://hr-reporting-v1-kevink3344.aws-us-east-2.turso.io",
+  "policyChecksum": "8da1113907c74e94437d2723f6be3c454b51e5bfbdc0172ce207089842395875",
+  "payloadChecksum": "d98d47cda457bb7e468894d144501b82989f27a97a56e7b27ab2316dbe4e47ee",
+  "tables": {
+    "schools": {
+      "rows": 3,
+      "checksum": "c7144817bf8b676ab1cdb3acd98313cf815e76591146c3cf68213b876076874b"
+    },
+    "employee_info": {
+      "rows": 414,
+      "checksum": "8fc88b5a70208c0bb7030023dff929023b3cb27944be17de13a50f05bb05dd1e"
+    },
+    "position_info": {
+      "rows": 572,
+      "checksum": "dc4cdab2115d85c526a0fb7e7729cc3d1a12dbcd394c193d297932c2c2b7d178"
+    },
+    "address": {
+      "rows": 373,
+      "checksum": "3915c75e953a83ce040216a22feeb158095f7bda027cdef6ad411db2cce5ae84"
+    },
+    "cert_info": {
+      "rows": 287,
+      "checksum": "80472bb6c6ec08c1fd35eb8bca993e8b73b0ddd4e3eda657c49e57eab3892f1f"
+    },
+    "cert_area": {
+      "rows": 543,
+      "checksum": "96907de9a055c543c993af5c35cdefe26bb004d9768f15e874f28b42ae648f7d"
+    },
+    "leaves": {
+      "rows": 3090,
+      "checksum": "4cc8a8005f3013311bff77c5a11dd93a7cc36a2d9e3d45f18bb1af05253fec0d"
+    },
+    "assignment": {
+      "rows": 418,
+      "checksum": "d8f805cdd4ca3dad7dedcbef3095ce591912ac83063fa51ac20e1dd98d6e23c5"
+    },
+    "education_info": {
+      "rows": 480,
+      "checksum": "76abbf61641af8e7f4908d1014fb279c181f54d721faf20a777161ad4eb7c01f"
+    },
+    "resignations": {
+      "rows": 28,
+      "checksum": "14c34b0c92239aa4107902f29f98ab81d2772f48c908d844d3ec51c910765a59"
+    }
+  },
+  "appStateCleared": [
+    "report_view_comments",
+    "report_view_invites",
+    "report_views",
+    "position_comments",
+    "position_pins",
+    "future_positions",
+    "person_favorites",
+    "ask_history"
+  ],
+  "totalRows": 6208
+}

@@ -23,3 +23,12 @@ docs/data/daily-refresh/system-info-snapshot.json
 
 # Local editor config
 .vscode/
+
+# Throwaway output from verification runs (probe / build / typecheck dumps).
+# These live at the repo root and are regenerated on demand; they are not
+# source. Probe SCRIPTS under scripts/ are intentional and stay tracked.
+.logs/
+/_*.txt
+/_*.json
+/_*.html
+_tsc-client.txt

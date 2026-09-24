@@ -23,6 +23,9 @@ import { openApiDocument } from './openapi.js';
 import { viewDefinitionSchema } from './report-views.js';
 import { reportHighlightRulesSchema } from './report-highlight.js';
 import { validateSubreportSql } from './reports-sql.js';
+import { featureSchemaDefinitionSchema, validateFeatureRecord } from './feature-schema.js';
+import { listFeatureValues, upsertFeatureValue } from './feature-values.js';
+import { seedFeatureSchemas } from './feature-definitions.js';
 import { normalizeAdvancedSearchFilters } from './advanced-search.js';
 import { baselineFor, buildSystemInfo, readSnapshot, recordReading, stripImplausibleCounts, tablesFromReadings, writeSnapshot, SNAPSHOT_VERSION, type SnapshotReading } from './system-info.js';
 import {
@@ -140,6 +143,62 @@ const validateSqlSchema = z.object({
   sqlQuery: z.string().trim().min(1).max(20000),
   subreport: z.boolean().optional()
 });
+
+// ---- Generic feature storage (request shapes) ----
+// Lengths mirror the live columns exactly (`feature_key` varchar(64), `name`
+// varchar(128), `description` varchar(255), `scope_key` varchar(255)) so an
+// over-long value is a 400 from here rather than a silent truncation by MariaDB
+// — the database runs non-strict (`IGNORE_SPACE`, latin1), which cuts a value
+// to fit without complaining.
+const featureSchemaBodySchema = z.object({
+  featureKey: z.string().trim().regex(/^[a-z][a-z0-9_]*$/, 'Expected lower_snake_case').max(64),
+  name: z.string().trim().min(1).max(128),
+  description: z.string().trim().max(255).nullable().optional(),
+  version: z.number().int().positive().optional(),
+  definition: featureSchemaDefinitionSchema,
+  isActive: z.boolean().optional()
+});
+
+// `featureKey` is omitted rather than optional: it is the schema's identity and
+// a patch must not be able to move it.
+const featureSchemaPatchSchema = featureSchemaBodySchema.omit({ featureKey: true }).partial();
+
+const featureValueBodySchema = z.object({
+  data: z.record(z.string(), z.unknown()),
+  scopeKey: z.string().trim().max(255).nullable().optional()
+});
+
+const featureValuePatchSchema = z.object({
+  data: z.record(z.string(), z.unknown()).optional(),
+  scopeKey: z.string().trim().max(255).nullable().optional(),
+  isActive: z.boolean().optional()
+});
+
+/**
+ * Resolve the schema a value route operates on. Returns null for an unknown or
+ * deactivated schema, which the routes answer as 404 — an inactive schema is
+ * indistinguishable from a missing one to a client, deliberately.
+ */
+async function activeFeatureSchema(repositories: Repositories, featureKey: string) {
+  const schema = await repositories.featureStorage.getSchemaByKey(featureKey);
+  return schema && schema.isActive ? schema : null;
+}
+
+/** A query param as a trimmed string, or undefined when absent/blank. */
+function optionalQueryString(value: unknown): string | undefined {
+  const single = Array.isArray(value) ? value[0] : value;
+  if (typeof single !== 'string') return undefined;
+  const trimmed = single.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
+/** A query param as a bounded positive integer, or undefined when unusable. */
+function optionalQueryLimit(value: unknown): number | undefined {
+  const single = optionalQueryString(value);
+  if (single === undefined) return undefined;
+  const parsed = Number(single);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+}
 
 /** Express 5 types route params as string | string[]; our ids are single segments. */
 function routeId(value: unknown): string {
@@ -305,6 +364,28 @@ function dataSourceNameFor(repositories: Repositories): string {
       : repositories === hybridRepositories
         ? 'hybrid'
         : 'fixtures';
+}
+
+/**
+ * Reachability report for the backing store a repository set reads from.
+ *
+ * `fixtures` is deterministic in-process data, so it never needs a database —
+ * `dbRequired` is false there and the client must not gate sign-on on it.
+ * Hybrid needs BOTH its MySQL data side AND its Turso config side ready.
+ * Shared by `/api/health` (which the sign-on screen polls) and the sign-in
+ * guard, so the two can never disagree about whether the database is up.
+ */
+async function dataSourceReadiness(repositories: Repositories): Promise<{ dataSource: string; dbRequired: boolean; dbReady: boolean }> {
+  const dataSource = dataSourceNameFor(repositories);
+  const dbRequired = dataSource !== 'fixtures';
+  const dbReady = !dbRequired
+    ? false
+    : dataSource === 'mysql'
+      ? await isDbReady()
+      : dataSource === 'turso'
+        ? await isTursoDbReady()
+        : (await isDbReady()) && (await isTursoDbReady());
+  return { dataSource, dbRequired, dbReady };
 }
 
 /**
@@ -531,6 +612,16 @@ export function createApp(
   application.post('/api/auth/login', async (request, response, next) => {
     try {
       const credentials = loginSchema.parse(request.body);
+      // Credentials are matched against the user directory, which lives in the
+      // database for every non-fixture source. Report an unreachable database
+      // as 503 DB_UNAVAILABLE rather than letting the pool's socket error fall
+      // through as a generic 500, so the client can say the database is
+      // unavailable instead of "the sign-in service is unavailable".
+      const { dbRequired, dbReady } = await dataSourceReadiness(repositories);
+      if (dbRequired && !dbReady) {
+        response.status(503).json({ error: 'DB_UNAVAILABLE' });
+        return;
+      }
       const useMysqlAuth = repositories === mysqlRepositories || repositories === hybridRepositories;
       const session = useMysqlAuth
         ? await authenticateMysqlUser(credentials.wakeId, credentials.employeeId)
@@ -552,19 +643,12 @@ export function createApp(
   });
 
   application.get('/api/health', async (_request, response) => {
-    const dataSource = dataSourceNameFor(repositories);
-    // Hybrid needs BOTH its MySQL data side AND its Turso config side ready.
-    // Report ready only when they are, so the client's warming banner clears
-    // at the right moment.
-    const dbReady =
-      dataSource === 'mysql'
-        ? await isDbReady()
-        : dataSource === 'turso'
-          ? await isTursoDbReady()
-          : dataSource === 'hybrid'
-            ? (await isDbReady()) && (await isTursoDbReady())
-            : false;
-    response.json({ ok: true, dataSource, dbReady, aiConfigured: isAiConfigured() });
+    // The sign-on screen polls this to decide whether it can offer a sign-in at
+    // all, so it reports the backing store's CURRENT reachability plus
+    // `dbRequired` (false for fixtures, which needs no database) instead of a
+    // one-shot warming check.
+    const { dataSource, dbRequired, dbReady } = await dataSourceReadiness(repositories);
+    response.json({ ok: true, dataSource, dbRequired, dbReady, aiConfigured: isAiConfigured() });
   });
 
   application.get('/api/people', async (request, response, next) => {
@@ -2159,11 +2243,209 @@ export function createApp(
     }
   });
 
+  // ---- Generic feature storage (feature_schemas + feature_values) ----
+  //
+  // `feature_schemas` describes a record shape in data; `feature_values` holds
+  // the records. Together they let a new config-shaped feature (recents, saved
+  // views, per-user preferences) ship as one schema row instead of a new table
+  // plus a hand-written validator, repository and route set.
+  //
+  // Schemas are admin-managed config, unusual to change at runtime — the server
+  // registers the ones it ships with on start-up, and these routes exist so an
+  // admin can inspect and adjust them without a deploy. Values are per-user by
+  // construction: every read and write is scoped to `callerId(request)`, which
+  // is the same identity `GET /api/ai/history` already scopes on, so no caller
+  // can see or delete another's records. That scoping is the *only* protection
+  // on the value routes — they are deliberately not admin-gated, because they
+  // are the ordinary user's own data.
+  //
+  // A database that has not had the tables created yet degrades the way style
+  // themes do: reads answer with an empty result, writes answer 503, so a
+  // pending DBA migration disables recents rather than breaking the page.
+  application.get('/api/feature-schemas', requireAdmin, async (_request, response, next) => {
+    try {
+      const schemas = await repositories.featureStorage.listSchemas();
+      response.json(schemas);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.json([]); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.get('/api/feature-schemas/:featureKey', requireAdmin, async (request, response, next) => {
+    try {
+      const schema = await repositories.featureStorage.getSchemaByKey(routeId(request.params.featureKey));
+      if (!schema) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      response.json(schema);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.post('/api/feature-schemas', requireAdmin, async (request, response, next) => {
+    try {
+      const input = featureSchemaBodySchema.parse(request.body);
+      // Register-only when the key is taken. POST is the create verb, so
+      // silently rewriting an existing schema's shape would be the wrong
+      // answer to a mistake; `ensureSchema` on start-up is the reconcile path.
+      const existing = await repositories.featureStorage.getSchemaByKey(input.featureKey);
+      if (existing) { response.status(409).json({ error: 'FEATURE_SCHEMA_EXISTS' }); return; }
+      const created = await repositories.featureStorage.createSchema(input, callerId(request));
+      response.status(201).json(created);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'FEATURE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.patch('/api/feature-schemas/:featureKey', requireAdmin, async (request, response, next) => {
+    try {
+      const featureKey = routeId(request.params.featureKey);
+      // The key is the identity of a schema and never changes — records already
+      // reference the schema by id, so a rename here would leave the admin
+      // looking at a feature nothing reads. Only the shape is editable.
+      const patch = featureSchemaPatchSchema.parse(request.body);
+      const existing = await repositories.featureStorage.getSchemaByKey(featureKey);
+      if (!existing) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      const updated = await repositories.featureStorage.updateSchema(existing.id, patch);
+      if (!updated) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      response.json(updated);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'FEATURE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.delete('/api/feature-schemas/:featureKey', requireAdmin, async (_request, response) => {
+    // Defined as "reject on purpose". Deleting a schema would orphan every value
+    // that points at it, and the tables have no foreign key to cascade or
+    // refuse the delete for us. Deactivating it stops new records without
+    // hiding what is already stored, so that is the supported operation.
+    response.status(405).json({ error: 'FEATURE_SCHEMA_NOT_DELETABLE' });
+  });
+
+  application.get('/api/feature-values/:featureKey', async (request, response, next) => {
+    try {
+      const schema = await activeFeatureSchema(repositories, routeId(request.params.featureKey));
+      if (!schema) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      const values = await listFeatureValues(repositories.featureStorage, schema, callerId(request), {
+        scopeKey: optionalQueryString(request.query.scopeKey),
+        limit: optionalQueryLimit(request.query.limit)
+      });
+      response.json({ featureKey: schema.featureKey, values });
+    } catch (error) {
+      if (isMissingTableError(error)) { response.json({ featureKey: routeId(request.params.featureKey), values: [] }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.post('/api/feature-values/:featureKey', async (request, response, next) => {
+    try {
+      const schema = await activeFeatureSchema(repositories, routeId(request.params.featureKey));
+      if (!schema) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      const body = featureValueBodySchema.parse(request.body);
+      const result = await upsertFeatureValue(repositories.featureStorage, schema, {
+        ownerId: callerId(request),
+        scopeKey: body.scopeKey ?? null,
+        data: body.data
+      });
+      if (!result.ok) {
+        response.status(400).json({ error: result.error, details: result.issues });
+        return;
+      }
+      response.status(200).json(result.value);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'FEATURE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.patch('/api/feature-values/:featureKey/:id', async (request, response, next) => {
+    try {
+      const schema = await activeFeatureSchema(repositories, routeId(request.params.featureKey));
+      if (!schema) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      const id = routeId(request.params.id);
+      const existing = await repositories.featureStorage.getValue(id);
+      // The row has to belong to the caller AND to this feature, otherwise a
+      // known id from one feature would be editable through another's route.
+      if (!existing || existing.ownerId !== callerId(request) || existing.schemaId !== schema.id) {
+        response.status(404).json({ error: 'FEATURE_VALUE_NOT_FOUND' });
+        return;
+      }
+      const patch = featureValuePatchSchema.parse(request.body);
+      if (patch.data !== undefined) {
+        // A replacement payload is validated exactly like an incoming one. The
+        // identity field is not re-derived here: changing a record's key would
+        // be a different record wearing the same id, which is what POST is for.
+        const check = validateFeatureRecord(schema.definition, patch.data);
+        if (!check.ok) { response.status(400).json({ error: 'FEATURE_VALIDATION_ERROR', details: check.issues }); return; }
+        patch.data = check.data;
+      }
+      const updated = await repositories.featureStorage.updateValue(id, patch);
+      if (!updated) { response.status(404).json({ error: 'FEATURE_VALUE_NOT_FOUND' }); return; }
+      response.json(updated);
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'FEATURE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.delete('/api/feature-values/:featureKey/:id', async (request, response, next) => {
+    try {
+      const schema = await activeFeatureSchema(repositories, routeId(request.params.featureKey));
+      if (!schema) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      const id = routeId(request.params.id);
+      const existing = await repositories.featureStorage.getValue(id);
+      if (!existing || existing.schemaId !== schema.id) {
+        response.status(404).json({ error: 'FEATURE_VALUE_NOT_FOUND' });
+        return;
+      }
+      // Ownership goes into the WHERE clause via the route's own caller id, so
+      // another user's row is never deleted even if its id is known.
+      const removed = await repositories.featureStorage.deleteValue(id, callerId(request));
+      if (!removed) { response.status(404).json({ error: 'FEATURE_VALUE_NOT_FOUND' }); return; }
+      response.status(204).end();
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'FEATURE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
+  application.delete('/api/feature-values/:featureKey', async (request, response, next) => {
+    try {
+      const schema = await activeFeatureSchema(repositories, routeId(request.params.featureKey));
+      if (!schema) { response.status(404).json({ error: 'FEATURE_SCHEMA_NOT_FOUND' }); return; }
+      const removed = await repositories.featureStorage.clearValues(schema.id, callerId(request));
+      response.json({ removed });
+    } catch (error) {
+      if (isMissingTableError(error)) { response.status(503).json({ error: 'FEATURE_STORAGE_NOT_READY' }); return; }
+      const mapped = repoErrorToStatus(error);
+      if (mapped.status !== 500) { response.status(mapped.status).json(mapped.body); return; }
+      next(error);
+    }
+  });
+
   application.get('/api/docs.json', (_request, response) => {
     response.json(openApiDocument);
   });
   application.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
-
   // Serve the built React client (single-host deployment). Only mounts when a
   // production build exists; in dev the Vite dev server runs separately on 5173.
   if (options?.serveClient) mountClientStatic(application);
@@ -2195,6 +2477,15 @@ export function createRuntimeApp(): ReturnType<typeof createApp> {
         : dataSource === 'hybrid'
           ? hybridRepositories
           : fixtureRepositories;
+  // Register the shipped feature schemas. Not awaited: the server must start
+  // even when the database is unreachable or the tables have not been created,
+  // and the value routes already degrade while the rows are missing. Fixture
+  // mode seeds at module load, so this only does work for a real data source.
+  void seedFeatureSchemas(repositories.featureStorage).then(({ failed }) => {
+    if (failed.length > 0) {
+      console.warn(`[feature-storage] could not register schemas: ${failed.join(', ')}`);
+    }
+  });
   return createApp(repositories, { serveClient: true });
 }
 

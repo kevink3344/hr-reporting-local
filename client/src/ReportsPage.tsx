@@ -35,7 +35,7 @@ import { exportGenericReport, exportGenericReportToCsv } from './reportExport';
 import { exportGenericReportToPdf } from './reportPdf';
 import { SchoolCombobox } from './SchoolCombobox';
 import { loadLastReport, loadLastSchool, saveLastReport, saveLastSchool } from './lastRun';
-import { formatRelativeTime, loadRecentRuns, recordRecentRun } from './recentRuns';
+import { formatRelativeTime, loadRecentRuns, recordRecentRun, syncRecentRuns } from './recentRuns';
 import type { RecentRun } from './recentRuns';
 import {
   applyFilter,
@@ -1012,7 +1012,19 @@ export function ReportsPage({ schools, session, onManage, onOpenRecord, onOpenPo
   const [result, setResult] = useState<GenericReportRun | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState('');
-  const [recentRuns, setRecentRuns] = useState<RecentRun[]>(() => loadRecentRuns(session?.user.id ?? ''));
+  const [recentRuns, setRecentRuns] = useState<RecentRun[]>(() => loadRecentRuns(session?.user.id ?? null));
+
+  // Paint the cached runs, then reconcile with the server. `syncRecentRuns`
+  // never rejects: on any server problem it resolves to the cache above, so the
+  // strip keeps working while `feature_values` is still missing.
+  useEffect(() => {
+    let cancelled = false;
+    void syncRecentRuns(session, session?.user.id ?? null).then((next) => {
+      if (!cancelled) setRecentRuns(next);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id]);
 
   const isAdmin = session?.user.roles.includes('hr_admin') ?? false;
   const selectedSchool = schools.find((school) => school.id === schoolId) ?? null;
@@ -1070,10 +1082,10 @@ export function ReportsPage({ schools, session, onManage, onOpenRecord, onOpenPo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReport?.id, selectedSchool?.name]);
 
-  // Record each successful run into the user's recent-runs list (client v0).
+  // Record each successful run into the user's recent-runs list.
   useEffect(() => {
     if (!result) return;
-    setRecentRuns(recordRecentRun(userId, {
+    setRecentRuns(recordRecentRun(session, userId || null, {
       reportId: result.report.id,
       reportTitle: result.report.title,
       organization: result.organization

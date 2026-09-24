@@ -171,9 +171,10 @@ export function SystemInfoPage({ session }: { session: LoginSession }) {
         <div className="notice error">
           <AlertCircle size={18} />
           <span>
-            Live counts are not available on the <strong>{data.dataSource}</strong> data source. This page reads the
-            reporting database, so run the server with <code>DATA_SOURCE=mysql</code> (or <code>hybrid</code>) to see
-            the comparison.
+            Live counts are not available on the <strong>{data.dataSource}</strong> data source. This page compares the
+            reporting database against its own recorded baseline, so it needs a direct connection to that database:
+            run the server with <code>DATA_SOURCE=mysql</code> (or <code>hybrid</code>). An imported copy of the data
+            (<code>turso</code>, <code>fixtures</code>) has no separate live half to compare against.
           </span>
         </div>
       )}
@@ -329,7 +330,7 @@ export function SystemInfoPage({ session }: { session: LoginSession }) {
       <div className="system-info-footnote">
         <p>
           <Database size={13} aria-hidden="true" /> Live counts read from <strong>{data.dataSource}</strong>{' '}
-          {data.liveCountsAvailable ? 'and were measured just now' : '(live counts unavailable)'}.
+          {data.liveCountsAvailable ? 'and were measured just now' : '(no live reporting database on this source)'}.
         </p>
         <p>
           <HardDrive size={13} aria-hidden="true" /> The reporting database has no per-row load timestamp and no

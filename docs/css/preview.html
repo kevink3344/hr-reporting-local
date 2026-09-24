@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WCPSS stylesheet preview</title>
+<link rel="stylesheet" href="wcpss.css" />
+<style>
+  /* Preview-only chrome so the page fills the viewport. Not part of the system. */
+  body { margin: 0; padding-bottom: 64px; }
+  .demo-block { margin-top: 34px; }
+  .demo-note { font-size: 11.5px; color: var(--wcpss-muted); margin-bottom: 10px; }
+  .theme-toggle { position: fixed; right: 18px; bottom: 18px; z-index: 10; }
+</style>
+</head>
+<body class="wcpss">
+  <div class="wcpss-topbar"></div>
+
+  <header class="wcpss-header">
+    <div class="wcpss-wrap">
+      <div class="wcpss-brand">
+        <span class="wcpss-brand-mark">WCPSS</span>
+        <div>
+          <div class="wcpss-brand-name">Wake County Public Schools</div>
+          <div class="wcpss-brand-sub">Human Resources</div>
+        </div>
+      </div>
+      <p class="wcpss-header-note">For staff use only. Questions? Contact the Help Desk at helpdesk@wcpss.net</p>
+    </div>
+  </header>
+
+  <main class="wcpss-wrap">
+    <p class="wcpss-section-title">Stat tiles</p>
+    <div class="wcpss-tiles">
+      <div class="wcpss-tile">
+        <button class="wcpss-tile__main" type="button">
+          <span class="wcpss-tile__value">128</span>
+          <span class="wcpss-tile__label">Vacant positions</span>
+          <span class="wcpss-tile__sub">As of today</span>
+          <span class="wcpss-tile__link">View the list &rarr;</span>
+        </button>
+        <a class="wcpss-info-btn" href="#" title="How is this calculated?">i</a>
+      </div>
+      <div class="wcpss-tile wcpss-tile--accent">
+        <button class="wcpss-tile__main" type="button">
+          <span class="wcpss-tile__value">42</span>
+          <span class="wcpss-tile__label">Expiring contracts</span>
+          <span class="wcpss-tile__sub">Next 60 days</span>
+        </button>
+        <a class="wcpss-info-btn" href="#" title="How is this calculated?">i</a>
+      </div>
+      <div class="wcpss-tile">
+        <button class="wcpss-tile__main" type="button">
+          <span class="wcpss-tile__value">1.0</span>
+          <span class="wcpss-tile__label">Average FTE</span>
+        </button>
+      </div>
+      <div class="wcpss-tile">
+        <button class="wcpss-tile__main" type="button">
+          <span class="wcpss-tile__value">96<span style="font-size:18px">%</span></span>
+          <span class="wcpss-tile__label">Authorized</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="demo-block">
+      <div class="wcpss-notice">
+        <span>Only positions with <code>incumbent = absent</code> are counted as vacant.</span>
+      </div>
+    </div>
+
+    <p class="wcpss-section-title">Bar list</p>
+    <div class="wcpss-card">
+      <div class="wcpss-card__head">
+        <div>
+          <h2 class="wcpss-card__title">Vacancies by school</h2>
+          <div class="wcpss-card__sub">Top 5 of 182 schools</div>
+        </div>
+        <div class="wcpss-segmented" role="radiogroup" aria-label="View">
+          <button type="button" role="radio" aria-checked="true">Count</button>
+          <button type="button" role="radio" aria-checked="false">Rate</button>
+        </div>
+      </div>
+      <div class="wcpss-bars">
+        <button class="wcpss-bar-row wcpss-bar-row--clickable" type="button">
+          <span class="wcpss-bar-name">Broughton High <span class="wcpss-go">&rarr;</span></span>
+          <span class="wcpss-bar-track"><span class="wcpss-bar-fill" style="width:72%"></span></span>
+          <span class="wcpss-bar-count">9 <small>/ 12</small></span>
+        </button>
+        <button class="wcpss-bar-row wcpss-bar-row--clickable" type="button">
+          <span class="wcpss-bar-name">Athens High <span class="wcpss-go">&rarr;</span></span>
+          <span class="wcpss-bar-track"><span class="wcpss-bar-fill wcpss-bar-fill--accent" style="width:46%"></span></span>
+          <span class="wcpss-bar-count">6 <small>/ 13</small></span>
+        </button>
+        <button class="wcpss-bar-row wcpss-bar-row--clickable" type="button">
+          <span class="wcpss-bar-name">Leesville Road High <span class="wcpss-go">&rarr;</span></span>
+          <span class="wcpss-bar-track"><span class="wcpss-bar-fill" style="width:31%"></span></span>
+          <span class="wcpss-bar-count">4 <small>/ 13</small></span>
+        </button>
+      </div>
+      <div class="wcpss-card__foot">Click any row to open its list. <code>incumbent = absent</code></div>
+    </div>
+
+    <p class="wcpss-section-title">Toolbar &amp; table</p>
+    <div class="wcpss-row wcpss-row--between" style="margin-bottom:14px">
+      <div class="wcpss-search">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="2"/></svg>
+        <input class="wcpss-input" type="search" placeholder="Search positions" aria-label="Search positions" />
+      </div>
+      <div class="wcpss-row">
+        <span class="wcpss-select-wrap">
+          <select class="wcpss-select" aria-label="Status">
+            <option>All statuses</option>
+            <option>Vacant</option>
+            <option>Filled</option>
+          </select>
+        </span>
+        <button class="wcpss-btn" type="button">Export CSV</button>
+        <button class="wcpss-btn wcpss-btn--ghost" type="button">Reset</button>
+      </div>
+    </div>
+
+    <div class="wcpss-table-wrap">
+      <table class="wcpss-table wcpss-table--clickable">
+        <caption>Positions at <b>Broughton High School</b> &middot; <span class="wcpss-count-badge">12</span></caption>
+        <thead>
+          <tr>
+            <th scope="col">Position</th>
+            <th scope="col">Incumbent</th>
+            <th scope="col">Account</th>
+            <th scope="col" class="wcpss-num">FTE</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="wcpss-cell-title">Teacher, Math</span><span class="wcpss-cell-sub">Position 400123</span></td>
+            <td>Alex Rivera</td>
+            <td class="wcpss-mono" style="font-size:12px">01-5400-003-151-0109-0318</td>
+            <td class="wcpss-num wcpss-mono">1.0</td>
+            <td><span class="wcpss-pill wcpss-pill--filled">Filled</span></td>
+          </tr>
+          <tr>
+            <td><span class="wcpss-cell-title">Teacher, Science</span><span class="wcpss-cell-sub">Position 400124</span></td>
+            <td class="wcpss-muted">&mdash;</td>
+            <td class="wcpss-mono" style="font-size:12px">01-5400-003-151-0109-0319</td>
+            <td class="wcpss-num wcpss-mono">1.0</td>
+            <td><span class="wcpss-pill wcpss-pill--vacant">Vacant</span></td>
+          </tr>
+          <tr>
+            <td><span class="wcpss-cell-title">Counselor</span><span class="wcpss-cell-sub">Position 400131</span></td>
+            <td class="wcpss-muted">&mdash;</td>
+            <td class="wcpss-mono" style="font-size:12px">01-5400-003-151-0110-0320</td>
+            <td class="wcpss-num wcpss-mono">0.5</td>
+            <td><span class="wcpss-pill wcpss-pill--vacant">Vacant</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="wcpss-table-foot">
+      <span>Showing 1&ndash;3 of 12</span>
+      <div class="wcpss-pager">
+        <button type="button" aria-label="Previous page" disabled>&lsaquo;</button>
+        <button type="button" aria-current="page">1</button>
+        <button type="button">2</button>
+        <button type="button">3</button>
+        <button type="button" aria-label="Next page">&rsaquo;</button>
+      </div>
+    </div>
+
+    <p class="wcpss-section-title">Typographic buttons &amp; pills</p>
+    <div class="wcpss-row">
+      <button class="wcpss-btn" type="button">Primary</button>
+      <button class="wcpss-btn wcpss-btn--ghost" type="button">Ghost</button>
+      <button class="wcpss-btn wcpss-btn--accent" type="button">Accent</button>
+      <button class="wcpss-btn wcpss-btn--sm" type="button">Small</button>
+      <span class="wcpss-pill wcpss-pill--neutral">Neutral</span>
+      <span class="wcpss-pill wcpss-pill--vacant">Vacant</span>
+      <span class="wcpss-pill wcpss-pill--filled">Filled</span>
+      <span class="wcpss-pill wcpss-pill--accent">New</span>
+      <span class="wcpss-mono">000123456</span>
+    </div>
+  </main>
+
+  <button class="wcpss-btn wcpss-btn--ghost theme-toggle" type="button"
+          onclick="var r=document.documentElement;r.dataset.theme = r.dataset.theme==='dark' ? '' : 'dark';">
+    Toggle dark mode
+  </button>
+</body>
+</html>

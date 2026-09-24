@@ -636,10 +636,27 @@ export type AiAskRequest = {
   question: string;
 };
 
+// ---- Generic feature storage (feature_schemas + feature_values) ----
+// A schema-described per-user record. The payload shape is defined in the
+// database, not in TypeScript, so `data` is opaque here; the recents modules
+// own the mapping between `data` and their own entry type.
+export type FeatureValue = {
+  id: string;
+  schemaId: string;
+  ownerId: string;
+  scopeKey: string | null;
+  data: Record<string, unknown>;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // GET /api/health
 export type HealthStatus = {
   ok: boolean;
   dataSource: string;
+  /** True when the active data source needs a database (everything but fixtures). */
+  dbRequired: boolean;
   dbReady: boolean;
   aiConfigured: boolean;
 };

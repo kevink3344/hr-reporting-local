@@ -27,7 +27,7 @@ button { cursor: pointer; }
 .login-art { display: flex; flex-direction: column; justify-content: flex-start; padding: clamp(32px, 7vw, 100px); color: #f8f4ea; background: linear-gradient(145deg, #2e5e56 0%, #224a45 65%, #183d3b 100%); }
 .login-art .eyebrow { color: #d8b16e; margin-top: 32px; }.login-art h1 { max-width: 320px; margin: 0 0 12px; font-size: clamp(34px, 5vw, 62px); line-height: .96; letter-spacing: -.04em; }.login-art p:last-child { margin: 0; color: #c8d8d1; font-size: 17px; }
 .login-art-mark { align-self: flex-start; display: inline-grid; place-items: center; padding: 0 2px 0 0; color: #2e5e56; background: #fff; border-radius: 0; }.login-art-mark img { display: block; width: 150px; height: auto; }
-.login-panel { display: grid; place-items: center; padding: 32px; background: radial-gradient(circle at 80% 20%, rgba(232, 189, 115, .28), transparent 24rem), #f5f1e8; }.login-panel-inner { width: min(100%, 430px); }.login-panel h2 { margin-bottom: 12px; font-size: clamp(38px, 5vw, 56px); }.login-copy { max-width: 360px; margin-bottom: 34px; color: #756f66; line-height: 1.5; }.login-form { display: grid; gap: 18px; }.login-form label { display: grid; gap: 8px; color: #514a41; font-size: 13px; font-weight: 600; }.login-form input { height: 48px; padding: 0 14px; border: 1px solid #d2c7b7; border-radius: 8px; outline: 0; color: #26231f; background: #fffdf8; }.login-form input:focus { border-color: #2e5e56; box-shadow: 0 0 0 3px rgba(46, 94, 86, .12); }.password-field { position: relative; display: flex; align-items: center; }.password-field .password-input { width: 100%; padding-right: 44px; }.password-toggle { position: absolute; right: 6px; display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 6px; color: #8c857a; background: transparent; cursor: pointer; }.password-toggle:hover { color: #2e5e56; background: rgba(46, 94, 86, .08); }.remember-row { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: #514a41; }.remember-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #2e5e56; flex: 0 0 auto; }.login-button { justify-content: center; width: 100%; margin-top: 4px; }.login-button:disabled { cursor: wait; opacity: .7; }.fixture-note { margin: 26px 0 0; color: #9b9388; font-size: 12px; line-height: 1.5; }.welcome-block { display: grid; gap: 2px; text-align: right; }.welcome-block strong { color: #38342f; font-size: 13px; }.welcome-block span { color: #8c857a; font-size: 11px; }
+.login-panel { display: grid; place-items: center; padding: 32px; background: radial-gradient(circle at 80% 20%, rgba(232, 189, 115, .28), transparent 24rem), #f5f1e8; }.login-panel-inner { width: min(100%, 430px); }.login-panel h2 { margin-bottom: 12px; font-size: clamp(38px, 5vw, 56px); }.login-copy { max-width: 360px; margin-bottom: 34px; color: #756f66; line-height: 1.5; }.login-form { display: grid; gap: 18px; }.login-form label { display: grid; gap: 8px; color: #514a41; font-size: 13px; font-weight: 600; }.login-form input { height: 48px; padding: 0 14px; border: 1px solid #d2c7b7; border-radius: 8px; outline: 0; color: #26231f; background: #fffdf8; }.login-form input:focus { border-color: #2e5e56; box-shadow: 0 0 0 3px rgba(46, 94, 86, .12); }.password-field { position: relative; display: flex; align-items: center; }.password-field .password-input { width: 100%; padding-right: 44px; }.password-toggle { position: absolute; right: 6px; display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 6px; color: #8c857a; background: transparent; cursor: pointer; }.password-toggle:hover { color: #2e5e56; background: rgba(46, 94, 86, .08); }.remember-row { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; cursor: pointer; color: #514a41; }.remember-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #2e5e56; flex: 0 0 auto; }.login-button { justify-content: center; width: 100%; margin-top: 4px; }.login-button:disabled { cursor: wait; opacity: .7; }.login-form--locked input:disabled { opacity: .6; cursor: not-allowed; }.login-form--locked .remember-row { cursor: not-allowed; }.login-form--locked .login-button:disabled { cursor: not-allowed; opacity: .55; }.fixture-note { margin: 26px 0 0; color: #9b9388; font-size: 12px; line-height: 1.5; }.welcome-block { display: grid; gap: 2px; text-align: right; }.welcome-block strong { color: #38342f; font-size: 13px; }.welcome-block span { color: #8c857a; font-size: 11px; }
 .topbar { min-height: 78px; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px clamp(20px, 5vw, 72px); border-bottom: 1px solid #d9d0c1; background: rgba(250, 247, 240, .82); }.topbar > .brand-lockup { flex: 1; }
 .brand-lockup, .topbar-meta, .search-row, .panel-heading, .detail-header, .detail-status, .hero-stat, .notice { display: flex; align-items: center; }
 .brand-lockup { gap: 12px; }
@@ -738,6 +738,44 @@ td:first-child .badge-vacant,
   color: #514a41;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* An announcement body holds plain text — or, for a message written by the
+   original rich-text editor, a legacy Quill Delta that renders as real
+   paragraphs, lists and headings (see systemMessageFormat.tsx). The body class
+   stays the one source of type styling, so only the block margins the browser
+   would add on its own are reset here. */
+.system-banner-body > p,
+.system-banner-body > ul,
+.system-banner-body > ol,
+.system-banner-body > blockquote,
+.system-splash-body > p,
+.system-splash-body > ul,
+.system-splash-body > ol,
+.system-splash-body > blockquote {
+  margin: 0;
+}
+.system-banner-body > ul,
+.system-banner-body > ol,
+.system-splash-body > ul,
+.system-splash-body > ol {
+  padding-left: 1.35em;
+}
+.system-banner-body > blockquote,
+.system-splash-body > blockquote {
+  padding-left: 10px;
+  border-left: 2px solid currentColor;
+  opacity: .85;
+}
+.system-banner-body .system-message-heading,
+.system-splash-body .system-message-heading {
+  font-weight: 700;
+}
+.system-banner-body code,
+.system-splash-body code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .07);
+  font-size: .92em;
 }
 [data-theme="dark"] .system-splash-scrim {
   background: rgba(0, 0, 0, .65);

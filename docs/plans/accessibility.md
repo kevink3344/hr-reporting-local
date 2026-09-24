@@ -278,7 +278,19 @@ Recorded as live facts on 2026-09-10:
    → `MODIFY COLUMN value VARCHAR(255) NOT NULL`.
 2. `updated_at` holds `'0000-00-00 00:00:00'` while other app tables use `DATETIME(3) DEFAULT
    CURRENT_TIMESTAMP(3)`. A zero-date surfaces as a bogus 1899/1900 string via the `dateStrings` gotcha.
-3. App user `kkey2` has **`SELECT` only** — INSERT/UPDATE need `GRANT SELECT, INSERT, UPDATE, DELETE`.
+3. ~~App user `kkey2` has **`SELECT` only** — INSERT/UPDATE need `GRANT SELECT, INSERT, UPDATE, DELETE`.~~
+   **✅ RESOLVED** — re-checked 2026-09-14 via `SHOW GRANTS`: `kkey2` now holds
+   `GRANT SELECT, INSERT, UPDATE, DELETE ON \`reporting\`.\`app_settings\``. Blockers 1 and 2 still stand.
+
+> **Re-verified 2026-09-14.** Blocker 1 reproduced exactly: the single row's `value` is
+> `"Local testing uses synthetic fixture accounts. Production sign-i"` — **64 characters**, cut
+> mid-word. Same silent-truncation mechanism as the latin1 charset issue on the feature tables
+> (see `docs/sql/feature-storage.mysql.sql`).
+>
+> ⚠️ **New:** `app_settings` **does not exist in Turso at all** (checked `sqlite_master`;
+> no table matching `%settings%`). If `palette.enabled` / `palette.default` are to be read under
+> `DATA_SOURCE=turso`/`hybrid`, the table needs a Turso twin *and* a place in the app-state sync —
+> it is not in `APP_STATE_TABLES` (`scripts/sync-cloud-masked.mts`) either.
 
 ### 7.3 Endpoints
 

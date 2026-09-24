@@ -1,5 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { FEATURE_DEFINITIONS } from '../feature-definitions.js';
+import type {
+  FeatureSchema,
+  FeatureSchemaDefinition,
+  FeatureSchemaInput,
+  FeatureSchemaUpdate,
+  FeatureValue,
+  FeatureValueInput,
+  FeatureValueQuery,
+  FeatureValueUpdate
+} from '../feature-schema.js';
 import type {
   FuturePosition,
   GenericReportRun,
@@ -911,6 +922,7 @@ export const fixtureRepositories: Repositories = {
   featureFlags: buildFixtureFeatureFlags(),
   styleThemes: buildFixtureStyleThemes(),
   aiHistory: buildFixtureAiHistory(),
+  featureStorage: buildFixtureFeatureStorage(),
   // Fixtures model the app's own tables, not the Oracle reporting load, so
   // there are no live counts to compare against a recorded reading. Returning
   // an empty snapshot is deliberate — inventing plausible row counts here would
@@ -1684,4 +1696,171 @@ function buildFixtureAiHistory(): Repositories['aiHistory'] {
       return true;
     }
   };
+}
+
+// ---- Generic feature storage (feature_schemas + feature_values) ----
+// In-memory parity for the two tables every data source shares. Seeded from the
+// same FEATURE_DEFINITIONS the server registers on start-up, so fixture mode
+// and a live database describe the same features — a schema mistake fails here,
+// in the fast path, instead of only appearing against a real database.
+const fixtureFeatureSchemas = new Map<string, FeatureSchema>();
+const fixtureFeatureValues = new Map<string, FeatureValue>();
+
+function cloneFeatureSchema(schema: FeatureSchema): FeatureSchema {
+  return { ...schema, definition: structuredClone(schema.definition) };
+}
+
+function cloneFeatureValue(value: FeatureValue): FeatureValue {
+  return { ...value, data: structuredClone(value.data) };
+}
+
+function toFixtureFeatureSchema(input: FeatureSchemaInput, createdBy: string | null, now: string): FeatureSchema {
+  return {
+    id: newId(),
+    featureKey: input.featureKey,
+    name: input.name,
+    description: input.description ?? null,
+    version: input.version ?? 1,
+    definition: structuredClone(input.definition),
+    isActive: input.isActive !== false,
+    createdBy,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+for (const definition of FEATURE_DEFINITIONS) {
+  const seeded = toFixtureFeatureSchema(definition, 'system', nowIso());
+  fixtureFeatureSchemas.set(seeded.featureKey, seeded);
+}
+
+function buildFixtureFeatureStorage(): Repositories['featureStorage'] {
+  function findSchemaById(id: string): FeatureSchema | undefined {
+    for (const schema of fixtureFeatureSchemas.values()) {
+      if (schema.id === id) return schema;
+    }
+    return undefined;
+  }
+
+  function matches(value: FeatureValue, options?: FeatureValueQuery): boolean {
+    if (!options) return true;
+    if (options.ownerId !== undefined && value.ownerId !== options.ownerId) return false;
+    if (options.scopeKey !== undefined && value.scopeKey !== options.scopeKey) return false;
+    if (!options.includeInactive && !value.isActive) return false;
+    return true;
+  }
+
+  const api: Repositories['featureStorage'] = {
+    async listSchemas() {
+      return [...fixtureFeatureSchemas.values()]
+        .sort((a, b) => a.featureKey.localeCompare(b.featureKey))
+        .map(cloneFeatureSchema);
+    },
+    async getSchemaByKey(featureKey) {
+      const schema = fixtureFeatureSchemas.get(featureKey);
+      return schema ? cloneFeatureSchema(schema) : null;
+    },
+    async createSchema(input, createdBy) {
+      const schema = toFixtureFeatureSchema(input, createdBy ?? null, nowIso());
+      // Keyed by feature_key, matching the table's UNIQUE key — creating a
+      // second row for a known key has to fail the same way it would in SQL.
+      if (fixtureFeatureSchemas.has(schema.featureKey)) {
+        throw new Error(`ER_DUP_ENTRY:feature_schemas.${schema.featureKey}`);
+      }
+      fixtureFeatureSchemas.set(schema.featureKey, schema);
+      return cloneFeatureSchema(schema);
+    },
+    async ensureSchema(input, createdBy) {
+      const existing = fixtureFeatureSchemas.get(input.featureKey);
+      if (!existing) return api.createSchema(input, createdBy);
+      const sameDefinition = JSON.stringify(existing.definition) === JSON.stringify(input.definition);
+      const name = input.name || existing.name;
+      const description = input.description === undefined ? existing.description : input.description;
+      const version = input.version ?? existing.version;
+      if (
+        sameDefinition &&
+        name === existing.name &&
+        description === existing.description &&
+        version === existing.version
+      ) {
+        return cloneFeatureSchema(existing);
+      }
+      const updated = await api.updateSchema(existing.id, { name, description, version, definition: input.definition });
+      return updated ?? cloneFeatureSchema(existing);
+    },
+    async updateSchema(id, patch: FeatureSchemaUpdate) {
+      const existing = findSchemaById(id);
+      if (!existing) return null;
+      const next: FeatureSchema = {
+        ...existing,
+        name: patch.name ?? existing.name,
+        description: patch.description === undefined ? existing.description : patch.description,
+        version: patch.version ?? existing.version,
+        definition: patch.definition ? structuredClone(patch.definition) : existing.definition,
+        isActive: patch.isActive === undefined ? existing.isActive : patch.isActive,
+        updatedAt: nowIso()
+      };
+      fixtureFeatureSchemas.set(next.featureKey, next);
+      return cloneFeatureSchema(next);
+    },
+    async listValues(schemaId, options) {
+      const matched = [...fixtureFeatureValues.values()]
+        .filter((value) => value.schemaId === schemaId && matches(value, options))
+        // `at` lives in the payload, so the in-memory store can order on the
+        // same field the client does and sidestep the second-precision
+        // `updated_at` tie the SQL implementations have to live with.
+        .sort((a, b) => Number(b.data.at ?? 0) - Number(a.data.at ?? 0) || b.updatedAt.localeCompare(a.updatedAt));
+      const limited = options?.limit === undefined ? matched : matched.slice(0, Math.max(1, Math.floor(options.limit)));
+      return limited.map(cloneFeatureValue);
+    },
+    async getValue(id) {
+      const value = fixtureFeatureValues.get(id);
+      return value ? cloneFeatureValue(value) : null;
+    },
+    async createValue(input: FeatureValueInput) {
+      const now = nowIso();
+      const value: FeatureValue = {
+        id: newId(),
+        schemaId: input.schemaId,
+        ownerId: input.ownerId ?? null,
+        scopeKey: input.scopeKey ?? null,
+        data: structuredClone(input.data ?? {}),
+        isActive: input.isActive !== false,
+        createdAt: now,
+        updatedAt: now
+      };
+      fixtureFeatureValues.set(value.id, value);
+      return cloneFeatureValue(value);
+    },
+    async updateValue(id, patch: FeatureValueUpdate) {
+      const existing = fixtureFeatureValues.get(id);
+      if (!existing) return null;
+      const next: FeatureValue = {
+        ...existing,
+        scopeKey: patch.scopeKey === undefined ? existing.scopeKey : patch.scopeKey,
+        data: patch.data === undefined ? existing.data : structuredClone(patch.data),
+        isActive: patch.isActive === undefined ? existing.isActive : patch.isActive,
+        updatedAt: nowIso()
+      };
+      fixtureFeatureValues.set(id, next);
+      return cloneFeatureValue(next);
+    },
+    async deleteValue(id, ownerId) {
+      const existing = fixtureFeatureValues.get(id);
+      if (!existing) return false;
+      if (ownerId !== undefined && existing.ownerId !== ownerId) return false;
+      fixtureFeatureValues.delete(id);
+      return true;
+    },
+    async clearValues(schemaId, ownerId) {
+      let removed = 0;
+      for (const [id, value] of [...fixtureFeatureValues]) {
+        if (value.schemaId !== schemaId || value.ownerId !== ownerId) continue;
+        fixtureFeatureValues.delete(id);
+        removed += 1;
+      }
+      return removed;
+    }
+  };
+  return api;
 }

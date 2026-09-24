@@ -7,6 +7,7 @@ import {
   updateSystemMessage,
   deleteSystemMessage,
 } from './api';
+import { systemMessageToPlainText } from './systemMessageFormat';
 
 // Maximum simultaneous active banners. Enforced client-side (and the server
 // keeps banner counts per-type; a friendly validation is enough here).
@@ -118,7 +119,10 @@ export function SystemMessagesPage({ session, onBack }: { session: LoginSession;
   function startEdit(message: SystemMessage) {
     setEditingId(message.id);
     setDraftTitle(message.title);
-    setDraftMessage(message.message);
+    // A legacy rich-text body is flattened to its plain text, so the textarea
+    // shows the announcement instead of a Quill Delta document. Saving then
+    // stores plain text, which is the format this feature is specified in.
+    setDraftMessage(systemMessageToPlainText(message.message));
     setDraftType(message.type);
     setDraftActive(message.isActive);
     setDraftError('');
@@ -215,7 +219,7 @@ export function SystemMessagesPage({ session, onBack }: { session: LoginSession;
                     <span className={`system-message-type-badge ${message.type}`}>{message.type}</span>
                     {message.title || '(untitled)'}
                   </span>
-                  <span className="system-message-item-body">{message.message}</span>
+                  <span className="system-message-item-body">{systemMessageToPlainText(message.message)}</span>
                 </div>
                 {/* Edit reads as a normal button, and the state is a switch that
                     says On/Off out loud — the old ✎ / ◌ pair made an admin guess

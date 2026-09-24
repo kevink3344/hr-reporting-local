@@ -49,6 +49,8 @@ describe('HR Reporting API foundation', () => {
     const body = await response.json();
     expect(body.ok).toBe(true);
     expect(body.dataSource).toBe('fixtures');
+    // Fixtures need no database, so the sign-on screen must never gate on it.
+    expect(body.dbRequired).toBe(false);
     expect(body.dbReady).toBe(false);
     expect(typeof body.aiConfigured).toBe('boolean');
   });

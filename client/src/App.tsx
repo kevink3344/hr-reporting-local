@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, Clock, Copy, Eye, EyeOff, FileText, Flag, Gauge, GripVertical, Home, Lock, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, SearchCheck, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
-import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getDirectory, getFeatureFlag, getFuturePositionForPosition, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
-import type { DirectoryPositionResult, DirectoryResult, FeatureFlagsResponse, FuturePosition, FuturePositionStatus, KpiFacet, KpiMetricKey, KpiTarget, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
+import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getDirectory, getFeatureFlag, getFuturePositionForPosition, getHealthStatus, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
+import type { DirectoryPositionResult, DirectoryResult, FeatureFlagsResponse, FuturePosition, FuturePositionStatus, HealthStatus, KpiFacet, KpiMetricKey, KpiTarget, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
 import { AdvancedSearchPage } from './AdvancedSearchPage';
 import { FuturePositionsPage } from './FuturePositionsPage';
@@ -23,11 +23,22 @@ import { DEFAULT_SECTION_COLORS, SECTION_COLOR_OPTIONS, clearSectionColor, loadS
 import { BUILT_IN_STYLES, DEFAULT_STYLE, applyStyle, loadLastAppliedStyle, loadStyleId, themeToDefinition } from './styleThemes';
 import { loadHomePage, saveHomePage } from './homePage';
 import type { HomePage } from './homePage';
-import { addRecentPerson, clearRecentPeople, loadRecentPeople, removeRecentPerson } from './recentPeople';
-import { addRecentPosition, clearRecentPositions, loadRecentPositions, removeRecentPosition } from './recentPositions';
+import { addRecentPerson, clearRecentPeople, loadRecentPeople, removeRecentPerson, syncRecentPeople } from './recentPeople';
+import { addRecentPosition, clearRecentPositions, loadRecentPositions, removeRecentPosition, syncRecentPositions } from './recentPositions';
 import type { RecentPosition } from './recentPositions';
+import { SystemMessageBody } from './systemMessageFormat';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
+// Shown on the sign-on screen when the reporting database cannot be reached.
+// Sign-in is impossible in that state, so the form is disabled rather than
+// letting every attempt fail.
+const DB_UNAVAILABLE_MESSAGE = 'Database is currently unavailable. Please try again later.';
+
+// How often the sign-on screen re-checks database reachability. Polling (rather
+// than a single check on load) lets the form re-enable itself without a reload
+// once the database comes back — e.g. when the campus network or VPN reconnects.
+const HEALTH_POLL_MS = 15_000;
 
 // Normalize a stored date value (mysql2 may return a JS Date, or a
 // "YYYY-MM-DD HH:MM:SS" / full GMT string) into "YYYY-MM-DD" for the
@@ -41,9 +52,17 @@ function toDateInput(value: string | null | undefined): string {
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
 }
 
-function RecordField({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return <div className="record-field"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value || 'Not provided'}</strong></div>;
+// `empty` is the label shown when the value is absent. Most fields use the
+// generic "Not provided", but fields the sync pipeline deliberately NULLs
+// (date of birth, personal email, address, phone) pass "Masked for testing" so
+// an intentional redaction is not mistaken for missing source data.
+function RecordField({ label, value, mono = false, empty = 'Not provided' }: { label: string; value: React.ReactNode; mono?: boolean; empty?: string }) {
+  return <div className="record-field"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value || empty}</strong></div>;
 }
+
+// Fields the masking policy NULLs outright. Rendered with a distinct label so
+// the redaction is self-explanatory in the UI.
+const MASKED_EMPTY = 'Masked for testing';
 
 // Proposed salary toggle — the stored value is MONTHLY and is displayed as a
 // monthly figure by default. Clicking the field toggles between monthly and
@@ -271,8 +290,8 @@ function EmployeeRecord({
   }
 
   const renderers: Record<RecordSectionId, React.ReactNode> = {
-    identity: <><RecordField label="NC UID" value={record.identity.ncUid} mono /><RecordField label="Employee ID" value={record.identity.employeeNumber} mono /><RecordField label="Gender" value={record.identity.gender} /><RecordField label="Ethnicity" value={record.identity.ethnicity} /><RecordField label="Date of birth" value={record.identity.dateOfBirth} /><RecordField label="Email" value={record.identity.email} /><RecordField label="Personal email" value={record.identity.personalEmail} /></>,
-    contact: <><RecordField label="Address" value={record.contact.address} /><RecordField label="City" value={record.contact.city} /><RecordField label="State / ZIP" value={`${record.contact.state} ${record.contact.zip}`} mono /><RecordField label="Phone" value={record.contact.phone} mono /></>,
+    identity: <><RecordField label="NC UID" value={record.identity.ncUid} mono /><RecordField label="Employee ID" value={record.identity.employeeNumber} mono /><RecordField label="Gender" value={record.identity.gender} /><RecordField label="Ethnicity" value={record.identity.ethnicity} /><RecordField label="Date of birth" value={record.identity.dateOfBirth} empty={MASKED_EMPTY} /><RecordField label="Email" value={record.identity.email} /><RecordField label="Personal email" value={record.identity.personalEmail} empty={MASKED_EMPTY} /></>,
+    contact: <><RecordField label="Address" value={record.contact.address} empty={MASKED_EMPTY} /><RecordField label="City" value={record.contact.city} empty={MASKED_EMPTY} /><RecordField label="State / ZIP" value={`${record.contact.state ?? ''} ${record.contact.zip ?? ''}`.trim()} mono empty={MASKED_EMPTY} /><RecordField label="Phone" value={record.contact.phone} mono empty={MASKED_EMPTY} /></>,
     assignment: <><RecordField label="Location" value={record.assignment.organization} /><RecordField label="Classroom" value={record.assignment.classroom} /><RecordField label="Position" value={record.assignment.positionNumber ? <button className="report-cell-link" onClick={() => onOpenPosition(record.assignment.positionNumber, record.assignment.organization)}>{(record.assignment.positionNumber.trim() ? record.assignment.positionNumber.trim() + ' - ' : '') + record.assignment.position}</button> : record.assignment.position} /><RecordField label="Account" value={record.assignment.accountCode} mono /><RecordField label="Months" value={record.assignment.months} /><RecordField label="TAP" value={`${record.assignment.tapPercent.toFixed(2)}%`} /><RecordField label="Pay grade" value={record.assignment.payGrade} /><RecordField label="Group" value={record.assignment.group} /><RecordField label="Mail stop" value={record.assignment.mailStop} /><RecordField label="School type" value={record.assignment.schoolType} /><RecordField label="Supervisor" value={record.assignment.supervisor} /></>,
     compensation: <><RecordField label="Step" value={record.compensation.step} /><SalaryToggleField monthly={record.compensation.proposedSalary} view={salaryView} onToggle={() => setSalaryView((v) => (v === 'monthly' ? 'yearly' : 'monthly'))} /><RecordField label="Fixed supplement" value={money.format(record.compensation.fixedSupplement)} /><RecordField label="Off scale" value={money.format(record.compensation.offScale)} /><RecordField label="Supplement" value={money.format(record.compensation.supplement)} /><RecordField label="TOS state" value={money.format(record.compensation.tosState)} /><RecordField label="TOS supplement" value={money.format(record.compensation.tosSupplement)} /><RecordField label="Teacher differential" value={money.format(record.compensation.teacherDifferential)} /></>,
     contract: <><RecordField label="Hire date" value={record.contract.hireDate} /><RecordField label="Continuous date" value={record.contract.continuousDate} /><RecordField label="Last changed" value={record.contract.lastChanged} /><RecordField label="Type" value={record.contract.type} /><RecordField label="Start" value={record.contract.start} /><RecordField label="End" value={record.contract.end} /><RecordField label="Renewal year" value={record.contract.renewalYear} /><RecordField label="Change type" value={record.contract.changeType} /><RecordField label="Board number" value={record.contract.boardNumber} mono /></>,
@@ -901,6 +920,10 @@ export function App() {
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
+  // Reachability of the reporting database, as reported by GET /api/health.
+  // `null` means "not known yet" — the sign-on form is never disabled on a
+  // guess, only on a positive report that a required database is down.
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   // `people` holds the currently displayed directory rows. On landing it is the
   // user's recently searched people; after an explicit search it is the results.
@@ -1113,9 +1136,48 @@ export function App() {
     } catch { /* ignore */ }
   }
 
+  // True only when the active data source genuinely needs a database and that
+  // database is not answering. Fixture-backed deployments need no database, so
+  // they are never gated. Unknown status (`null`) is also not a gate.
+  const databaseUnavailable = healthStatus !== null && healthStatus.dbRequired && !healthStatus.dbReady;
+
+  // The blocking database notice outranks any earlier sign-in error — while the
+  // database is down the previous failure explains nothing the user can act on.
+  const loginNotice = databaseUnavailable ? DB_UNAVAILABLE_MESSAGE : loginError;
+
+  // Poll database reachability while signed out. Sign-in reads the user
+  // directory out of the database, so an unreachable database makes every
+  // attempt fail — the form is disabled and the reason shown instead. The
+  // poll is a self-rescheduling timeout (never an interval) so a slow probe
+  // can never stack requests, and it stops entirely once a session exists.
+  useEffect(() => {
+    if (session) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    async function check() {
+      try {
+        const status = await getHealthStatus();
+        if (!cancelled) setHealthStatus(status);
+      } catch {
+        // The API itself is unreachable rather than the database. Leave the
+        // status unknown so the form stays usable — submitting it reports the
+        // sign-in service as unavailable, which is the accurate message.
+        if (!cancelled) setHealthStatus(null);
+      } finally {
+        if (!cancelled) timer = window.setTimeout(() => void check(), HEALTH_POLL_MS);
+      }
+    }
+    void check();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [session]);
+
   // Auto-login: if user previously checked "Stay signed in", restore session without showing login form.
   useEffect(() => {
     if (session || autoLoginAttempted) return;
+    if (healthStatus === null || databaseUnavailable) return;
     let cancelled = false;
     try {
       const shouldRemember = window.localStorage.getItem('hr-report-remember-me') === '1';
@@ -1132,8 +1194,12 @@ export function App() {
         setWakeId(w);
         setEmployeeId(e);
         setRememberMe(true);
-      }).catch(() => {
+      }).catch((loginFailure: unknown) => {
         if (cancelled) return;
+        // A database outage is not a credential problem: keep the remembered
+        // credentials so the next launch (with the database back) still signs
+        // in automatically. Only a real rejection forgets them.
+        if (loginFailure instanceof Error && loginFailure.message === 'DB_UNAVAILABLE') return;
         try {
           window.localStorage.removeItem('hr-report-credentials');
           window.localStorage.removeItem('hr-report-remember-me');
@@ -1147,7 +1213,7 @@ export function App() {
       setAutoLoginAttempted(true);
     }
     return () => { cancelled = true; };
-  }, [session, autoLoginAttempted]);
+  }, [session, autoLoginAttempted, healthStatus, databaseUnavailable]);
 
   function reorderRecordSection(from: number, to: number) {
     setRecordLayout((prev) => reorderVisibleSections(prev, from, to));
@@ -1187,6 +1253,9 @@ export function App() {
 
   async function submitLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Guard the disabled attribute: the form can be submitted from the keyboard
+    // (Enter in a field) and by an automated client regardless of button state.
+    if (databaseUnavailable || loggingIn) return;
     setLoggingIn(true);
     setLoginError('');
     try {
@@ -1202,9 +1271,14 @@ export function App() {
         }
       } catch { /* ignore */ }
     } catch (loginFailure) {
-      setLoginError(loginFailure instanceof Error && loginFailure.message === 'INVALID_CREDENTIALS'
+      const code = loginFailure instanceof Error ? loginFailure.message : '';
+      setLoginError(code === 'INVALID_CREDENTIALS'
         ? 'Wake ID and Employee ID did not match a user in the system.'
-        : 'The sign-in service is unavailable.');
+        : code === 'DB_UNAVAILABLE'
+          // The database went away between the health poll and this attempt;
+          // the poll below will surface it as the blocking notice.
+          ? DB_UNAVAILABLE_MESSAGE
+          : 'The sign-in service is unavailable.');
     } finally {
       setLoggingIn(false);
     }
@@ -1345,8 +1419,17 @@ export function App() {
     // of the directory. The full directory is only fetched on an explicit search.
     const recent = loadRecentPeople(session.user.id);
     setRecentPeople(recent);
-    setPeople(recent);
     setRecentPositions(loadRecentPositions(session.user.id));
+    // Then reconcile both lists with the server, which is what makes the recents
+    // follow the user to a different browser. `syncRecent*` never rejects: on any
+    // server problem they resolve to the cache we just painted.
+    void Promise.all([
+      syncRecentPeople(session, session.user.id),
+      syncRecentPositions(session, session.user.id)
+    ]).then(([nextPeople, nextPositions]) => {
+      setRecentPeople(nextPeople);
+      setRecentPositions(nextPositions);
+    });
     void getSchools(session)
       .then((nextSchools) => {
         setSchools(nextSchools);
@@ -1387,7 +1470,7 @@ export function App() {
     setRecordLoading(true);
     // Track the opened record in the user's recently searched list.
     const userId = session?.user.id ?? null;
-    const nextRecent = addRecentPerson(userId, person);
+    const nextRecent = addRecentPerson(session, userId, person);
     setRecentPeople(nextRecent);
     try {
       setPersonRecord(await getPersonRecord(person.personId));
@@ -1440,7 +1523,7 @@ export function App() {
       setPositionDetails(details);
       // Track the opened position in the user's recent-positions list.
       const userId = session?.user.id ?? null;
-      const nextRecent = addRecentPosition(userId, {
+      const nextRecent = addRecentPosition(session, userId, {
         positionNumber: details.position.posNumber || trimmed,
         positionName: details.position.posName,
         organization: details.position.organization || organization,
@@ -1491,44 +1574,43 @@ export function App() {
     setHasSearched(false);
     setResults([]);
     // Returning to no search shows the user's recent searches again.
-    const recent = loadRecentPeople(session?.user.id ?? null);
-    setRecentPeople(recent);
-    setPeople(recent);
+    setRecentPeople(loadRecentPeople(session?.user.id ?? null));
     setRecentPositions(loadRecentPositions(session?.user.id ?? null));
   }
+
+  // The directory landing list mirrors the recents. Derived rather than set at
+  // every call site, so a reconcile that lands after the user has already
+  // searched cannot replace their results with an older list.
+  useEffect(() => {
+    if (!hasSearched) setPeople(recentPeople);
+  }, [recentPeople, hasSearched]);
 
   // Remove one person from the recent-searches list (only shown while the
   // directory is displaying recents, not live search results).
   function removeRecent(person: Person) {
-    const next = removeRecentPerson(session?.user.id ?? null, person.personId);
-    setRecentPeople(next);
-    if (!hasSearched) setPeople(next);
+    setRecentPeople(removeRecentPerson(session, session?.user.id ?? null, person.personId));
   }
 
   // Remove a recent person by id (the directory table holds DirectoryResult
   // rows, which only carry the id).
   function removeRecentPersonById(personId: string) {
-    const next = removeRecentPerson(session?.user.id ?? null, personId);
-    setRecentPeople(next);
-    if (!hasSearched) setPeople(next);
+    setRecentPeople(removeRecentPerson(session, session?.user.id ?? null, personId));
   }
 
   // Wipe the entire recent-searches list.
   function clearAllRecent() {
-    const next = clearRecentPeople(session?.user.id ?? null);
-    setRecentPeople(next);
-    if (!hasSearched) setPeople(next);
+    setRecentPeople(clearRecentPeople(session, session?.user.id ?? null));
   }
 
   // Remove one position from the recent-positions list.
   function removeRecentPos(positionNumber: string, organization: string) {
-    const next = removeRecentPosition(session?.user.id ?? null, positionNumber, organization);
+    const next = removeRecentPosition(session, session?.user.id ?? null, positionNumber, organization);
     setRecentPositions(next);
   }
 
   // Wipe the entire recent-positions list.
   function clearAllRecentPositions() {
-    setRecentPositions(clearRecentPositions(session?.user.id ?? null));
+    setRecentPositions(clearRecentPositions(session, session?.user.id ?? null));
   }
 
   // Compute which system-wide announcements are visible for the current user.
@@ -1599,19 +1681,19 @@ export function App() {
       <section className="login-panel" aria-labelledby="login-title">
         <div className="login-panel-inner">
           <p className="eyebrow">Secure access</p><h2 id="login-title">Welcome back.</h2><p className="login-copy">Sign in with your Wake credentials to continue to HR Reporting.</p>
-          <form className="login-form" onSubmit={submitLogin}>
-            <label>Wake ID<input value={wakeId} onChange={(event) => setWakeId(event.target.value)} placeholder="your Wake ID" autoComplete="username" required /></label>
+          <form className={`login-form${databaseUnavailable ? ' login-form--locked' : ''}`} onSubmit={submitLogin}>
+            <label>Wake ID<input value={wakeId} onChange={(event) => setWakeId(event.target.value)} placeholder="your Wake ID" autoComplete="username" disabled={databaseUnavailable} required /></label>
             <label>Employee ID
               <span className="password-field">
-                <input className="password-input" type={showEmployeeId ? 'text' : 'password'} value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} placeholder="your employee ID" inputMode="numeric" autoComplete="off" required />
+                <input className="password-input" type={showEmployeeId ? 'text' : 'password'} value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} placeholder="your employee ID" inputMode="numeric" autoComplete="off" disabled={databaseUnavailable} required />
                 <button type="button" className="password-toggle" aria-label={showEmployeeId ? 'Hide Employee ID' : 'Show Employee ID'} aria-pressed={showEmployeeId} onClick={() => setShowEmployeeId((visible) => !visible)}>
                   {showEmployeeId ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </span>
             </label>
-            <label className="remember-row"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /> Stay signed in on this device</label>
-            {loginError && <div className="notice error"><AlertCircle size={18} /><span>{loginError}</span></div>}
-            <button className="primary-button login-button" disabled={loggingIn}>{loggingIn ? 'Signing in...' : 'Sign in'}<ArrowUpRight size={17} /></button>
+            <label className="remember-row"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} disabled={databaseUnavailable} /> Stay signed in on this device</label>
+            {loginNotice && <div className="notice error" role="alert"><AlertCircle size={18} /><span>{loginNotice}</span></div>}
+            <button className="primary-button login-button" disabled={loggingIn || databaseUnavailable}>{loggingIn ? 'Signing in...' : 'Sign in'}<ArrowUpRight size={17} /></button>
           </form>
           <p className="fixture-note">NOTE: This application is for WCPSS staff use only. Should you experience an error or have questions about the data, please contact the Help Desk at helpdesk@wcpss.net</p>
         </div>
@@ -1652,7 +1734,7 @@ export function App() {
             <div key={message.id} className="system-banner">
               <div className="system-banner-content">
                 {message.title && <strong className="system-banner-title">{message.title}</strong>}
-                <span className="system-banner-body">{message.message}</span>
+                <SystemMessageBody className="system-banner-body" text={message.message} />
               </div>
               <button className="system-banner-dismiss" onClick={() => dismissBanner(message)} aria-label="Dismiss announcement" title="Dismiss">
                 <X size={16} />
@@ -1756,7 +1838,7 @@ export function App() {
               {activeSplash.title && <h2>{activeSplash.title}</h2>}
               <button className="system-splash-close" onClick={() => setSplashSeen(true)} aria-label="Close announcement" title="Close"><X size={18} /></button>
             </div>
-            <p className="system-splash-body">{activeSplash.message}</p>
+            <SystemMessageBody className="system-splash-body" text={activeSplash.message} plainTag="p" />
             <button className="primary-button" onClick={() => setSplashSeen(true)}>Got it</button>
           </div>
         </div>

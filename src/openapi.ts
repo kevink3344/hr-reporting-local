@@ -24,6 +24,14 @@ export const openApiDocument = {
       description: 'Structured, parameterised position search (name, vacancy, contract type/code/dates)'
     },
     {
+      name: 'Feature Storage',
+      description:
+        'Schema-described records — recents, saved filters and any future config-shaped feature — kept in ' +
+        '`feature_schemas`/`feature_values` instead of a bespoke table each. Value routes are scoped to the ' +
+        'caller identity sent in `x-user-id`, so a user reads and writes only their own records; schema routes ' +
+        'are administrator-only.'
+    },
+    {
       name: 'Admin',
       description:
         'Administrator-only diagnostics. The data-load report is read-only and gateable by a feature ' +
@@ -813,10 +821,357 @@ export const openApiDocument = {
           '403': { description: 'Organization outside the caller scope (ORGANIZATION_FORBIDDEN)' }
         }
       }
+    },
+    '/feature-schemas': {
+      get: {
+        tags: ['Feature Storage'],
+        operationId: 'listFeatureSchemas',
+        summary: 'List the registered feature schemas',
+        description:
+          'Every schema the server knows about, including the ones it registers itself for ' +
+          'shipped features (recents). Administrator only.',
+        responses: {
+          '200': {
+            description: 'Registered schemas',
+            content: {
+              'application/json': {
+                schema: { type: 'array', items: { $ref: '#/components/schemas/FeatureSchema' } }
+              }
+            }
+          },
+          '403': { description: 'Caller is not an administrator (FORBIDDEN)' }
+        }
+      },
+      post: {
+        tags: ['Feature Storage'],
+        operationId: 'createFeatureSchema',
+        summary: 'Register a new feature schema',
+        description:
+          'A schema describes a record shape in data, so a new config-shaped feature ships as ' +
+          'one call instead of a table, a validator and a repository. The key must be lower ' +
+          'snake case and unique; registering a key that already exists is a 409 rather than an ' +
+          'overwrite.',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureSchemaInput' } } }
+        },
+        responses: {
+          '201': {
+            description: 'Schema registered',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureSchema' } } }
+          },
+          '400': { description: 'Invalid definition (VALIDATION_ERROR)' },
+          '403': { description: 'Caller is not an administrator (FORBIDDEN)' },
+          '409': { description: 'The feature key is already registered (FEATURE_SCHEMA_EXISTS)' },
+          '503': { description: 'Tables not created yet (FEATURE_STORAGE_NOT_READY)' }
+        }
+      }
+    },
+    '/feature-schemas/{featureKey}': {
+      get: {
+        tags: ['Feature Storage'],
+        operationId: 'getFeatureSchema',
+        summary: 'Fetch one schema by feature key',
+        parameters: [{ $ref: '#/components/parameters/FeatureKey' }],
+        responses: {
+          '200': {
+            description: 'The schema',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureSchema' } } }
+          },
+          '403': { description: 'Caller is not an administrator (FORBIDDEN)' },
+          '404': { description: 'Unknown feature key (FEATURE_SCHEMA_NOT_FOUND)' }
+        }
+      },
+      patch: {
+        tags: ['Feature Storage'],
+        operationId: 'updateFeatureSchema',
+        summary: 'Change a schema definition',
+        description:
+          'The feature key is the schema identity and cannot be changed here — records already ' +
+          'reference the schema by id. Changing `definition` takes effect immediately for new ' +
+          'writes; records already stored are not re-validated, so a field removed from the ' +
+          'definition is stripped the next time that record is written.',
+        parameters: [{ $ref: '#/components/parameters/FeatureKey' }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureSchemaInput' } } }
+        },
+        responses: {
+          '200': {
+            description: 'Updated schema',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureSchema' } } }
+          },
+          '400': { description: 'Invalid definition (VALIDATION_ERROR)' },
+          '403': { description: 'Caller is not an administrator (FORBIDDEN)' },
+          '404': { description: 'Unknown feature key (FEATURE_SCHEMA_NOT_FOUND)' },
+          '503': { description: 'Tables not created yet (FEATURE_STORAGE_NOT_READY)' }
+        }
+      },
+      delete: {
+        tags: ['Feature Storage'],
+        operationId: 'deleteFeatureSchema',
+        summary: 'Refuse to delete a schema',
+        description:
+          'Always answers 405. Deleting a schema would orphan every value referencing it, and ' +
+          'the tables carry no foreign key that could refuse the delete. Deactivate the schema ' +
+          'instead — that stops new records without hiding what is already stored.',
+        parameters: [{ $ref: '#/components/parameters/FeatureKey' }],
+        responses: {
+          '405': { description: 'Not supported (FEATURE_SCHEMA_NOT_DELETABLE)' }
+        }
+      }
+    },
+    '/feature-values/{featureKey}': {
+      get: {
+        tags: ['Feature Storage'],
+        operationId: 'listFeatureValues',
+        summary: "The caller's own records for a feature",
+        description:
+          'Scoped to the calling user, never an argument — the same header identity ' +
+          '`GET /api/ai/history` scopes on. Ordering is `updated_at DESC` from the database, ' +
+          'which is second-precision on MariaDB 5.5, so clients that need a settled order sort ' +
+          'on the timestamp they store in the record payload.',
+        parameters: [
+          { $ref: '#/components/parameters/FeatureKey' },
+          {
+            name: 'scopeKey',
+            in: 'query',
+            required: false,
+            description: 'Restrict to records stored under one scope (for recents, the school).',
+            schema: { type: 'string', maxLength: 255 }
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            description: 'Maximum records to return, newest first.',
+            schema: { type: 'integer', minimum: 1 }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'The caller\'s live records',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureValueList' } } }
+          },
+          '404': { description: 'Unknown or inactive feature key (FEATURE_SCHEMA_NOT_FOUND)' }
+        }
+      },
+      post: {
+        tags: ['Feature Storage'],
+        operationId: 'upsertFeatureValue',
+        summary: 'Create or replace one of the caller\'s records',
+        description:
+          'A record whose `uniqueBy` fields match one already stored replaces it, so re-running ' +
+          'a search refreshes its entry instead of adding a second one. The payload is checked ' +
+          'against the schema definition — a value that fails is a 400, not a silent coercion. ' +
+          "When the schema declares `maxPerOwner`, the caller's oldest records beyond that cap " +
+          'are deleted, so the list cannot grow without bound.',
+        parameters: [{ $ref: '#/components/parameters/FeatureKey' }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureValueInput' } } }
+        },
+        responses: {
+          '200': {
+            description: 'The stored record, including the server-assigned id',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureValue' } } }
+          },
+          '400': { description: 'Payload failed the schema (FEATURE_VALIDATION_ERROR)' },
+          '404': { description: 'Unknown or inactive feature key (FEATURE_SCHEMA_NOT_FOUND)' },
+          '503': { description: 'Tables not created yet (FEATURE_STORAGE_NOT_READY)' }
+        }
+      },
+      delete: {
+        tags: ['Feature Storage'],
+        operationId: 'clearFeatureValues',
+        summary: "Delete all of the caller's records for a feature",
+        parameters: [{ $ref: '#/components/parameters/FeatureKey' }],
+        responses: {
+          '200': {
+            description: 'Number of records removed',
+            content: {
+              'application/json': {
+                schema: { type: 'object', required: ['removed'], properties: { removed: { type: 'integer' } } }
+              }
+            }
+          },
+          '404': { description: 'Unknown or inactive feature key (FEATURE_SCHEMA_NOT_FOUND)' },
+          '503': { description: 'Tables not created yet (FEATURE_STORAGE_NOT_READY)' }
+        }
+      }
+    },
+    '/feature-values/{featureKey}/{id}': {
+      patch: {
+        tags: ['Feature Storage'],
+        operationId: 'updateFeatureValue',
+        summary: "Change one of the caller's records",
+        description:
+          "Answers 404 — not 403 — for a record that belongs to someone else, so a known id " +
+          'does not reveal whose record it is or whether it exists.',
+        parameters: [{ $ref: '#/components/parameters/FeatureKey' }, { $ref: '#/components/parameters/FeatureValueId' }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureValuePatch' } } }
+        },
+        responses: {
+          '200': {
+            description: 'Updated record',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/FeatureValue' } } }
+          },
+          '400': { description: 'Replacement payload failed the schema (FEATURE_VALIDATION_ERROR)' },
+          '404': { description: 'Unknown feature, or record not the caller\'s (FEATURE_VALUE_NOT_FOUND)' },
+          '503': { description: 'Tables not created yet (FEATURE_STORAGE_NOT_READY)' }
+        }
+      },
+      delete: {
+        tags: ['Feature Storage'],
+        operationId: 'deleteFeatureValue',
+        summary: "Delete one of the caller's records",
+        parameters: [{ $ref: '#/components/parameters/FeatureKey' }, { $ref: '#/components/parameters/FeatureValueId' }],
+        responses: {
+          '204': { description: 'Deleted' },
+          '404': { description: 'Unknown feature, or record not the caller\'s (FEATURE_VALUE_NOT_FOUND)' },
+          '503': { description: 'Tables not created yet (FEATURE_STORAGE_NOT_READY)' }
+        }
+      }
     }
   },
   components: {
+    parameters: {
+      FeatureKey: {
+        name: 'featureKey',
+        in: 'path',
+        required: true,
+        description: 'Feature key, lower snake case (`recent_searches`).',
+        schema: { type: 'string', pattern: '^[a-z][a-z0-9_]*$', maxLength: 64 }
+      },
+      FeatureValueId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Server-assigned record id, taken from a previous list or write.',
+        schema: { type: 'string', maxLength: 64 }
+      }
+    },
     schemas: {
+      FeatureField: {
+        type: 'object',
+        required: ['key', 'type'],
+        description:
+          'One field of a record. `max` is the largest value for a number and the longest length ' +
+          'for a string, mirroring the underlying column widths so a too-long value is rejected ' +
+          'here rather than silently truncated by a non-strict MySQL.',
+        properties: {
+          key: { type: 'string' },
+          type: { type: 'string', enum: ['string', 'integer', 'number', 'boolean', 'json', 'enum', 'datetime'] },
+          required: { type: 'boolean', default: false },
+          nullable: { type: 'boolean', default: false },
+          default: { description: 'Applied when the field is absent.' },
+          max: { type: 'number', description: 'Numeric ceiling, or maximum length for a string.' },
+          min: { type: 'number', description: 'Numeric floor.' },
+          pattern: { type: 'string', description: 'Regular expression a string value must match.' },
+          values: { type: 'array', items: { type: 'string' }, description: 'Allowed values for `enum`.' }
+        }
+      },
+      FeatureSchemaDefinition: {
+        type: 'object',
+        required: ['fields'],
+        properties: {
+          fields: { type: 'array', items: { $ref: '#/components/schemas/FeatureField' } },
+          scope: {
+            type: 'object',
+            required: ['key'],
+            description: 'The dimension records are stored under, when the feature is per-school.',
+            properties: { key: { type: 'string' }, label: { type: 'string' } }
+          },
+          uniqueBy: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Fields whose values identify a record. A write whose key fields match an existing ' +
+              'record replaces it instead of adding a second row. Empty means append-only.'
+          },
+          maxPerOwner: {
+            type: 'integer',
+            description: "Cap on the caller's records. Oldest beyond the cap are deleted on write."
+          }
+        }
+      },
+      FeatureSchemaInput: {
+        type: 'object',
+        required: ['featureKey', 'name', 'definition'],
+        properties: {
+          featureKey: { type: 'string', pattern: '^[a-z][a-z0-9_]*$', maxLength: 64 },
+          name: { type: 'string', maxLength: 128 },
+          description: { type: 'string', nullable: true, maxLength: 255 },
+          version: { type: 'integer', minimum: 1 },
+          definition: { $ref: '#/components/schemas/FeatureSchemaDefinition' },
+          isActive: { type: 'boolean' }
+        }
+      },
+      FeatureSchema: {
+        type: 'object',
+        required: ['id', 'featureKey', 'name', 'version', 'definition', 'isActive'],
+        properties: {
+          id: { type: 'string' },
+          featureKey: { type: 'string' },
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          version: { type: 'integer' },
+          definition: { $ref: '#/components/schemas/FeatureSchemaDefinition' },
+          isActive: { type: 'boolean' },
+          createdBy: { type: 'string', nullable: true },
+          createdAt: { type: 'string' },
+          updatedAt: { type: 'string' }
+        }
+      },
+      FeatureValueInput: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            additionalProperties: true,
+            description: 'The record, validated against the schema definition.'
+          },
+          scopeKey: { type: 'string', maxLength: 255, nullable: true }
+        }
+      },
+      FeatureValuePatch: {
+        type: 'object',
+        description: 'Every field is optional; only what is present is changed.',
+        properties: {
+          data: { type: 'object', additionalProperties: true },
+          scopeKey: { type: 'string', maxLength: 255, nullable: true },
+          isActive: { type: 'boolean' }
+        }
+      },
+      FeatureValue: {
+        type: 'object',
+        required: ['id', 'schemaId', 'ownerId', 'data', 'isActive'],
+        properties: {
+          id: { type: 'string' },
+          schemaId: { type: 'string' },
+          ownerId: { type: 'string', description: 'The caller identity the record belongs to.' },
+          scopeKey: { type: 'string', nullable: true },
+          data: { type: 'object', additionalProperties: true },
+          isActive: { type: 'boolean' },
+          createdAt: { type: 'string' },
+          updatedAt: { type: 'string' }
+        }
+      },
+      FeatureValueList: {
+        type: 'object',
+        required: ['featureKey', 'values'],
+        properties: {
+          featureKey: { type: 'string' },
+          values: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/FeatureValue' },
+            description: 'Newest first as the database orders it. Empty — not an error — when no schema is registered.'
+          }
+        }
+      },
       LoginRequest: {
         type: 'object',
         required: ['wakeId', 'employeeId'],

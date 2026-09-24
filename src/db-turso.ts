@@ -3,7 +3,6 @@ import type { Client, InArgs, Value } from '@libsql/client';
 import { getTursoConfig, isTursoConfigured } from './config.js';
 
 let client: Client | null = null;
-let ready = false;
 
 export function getLibsqlClient(): Client {
   if (!isTursoConfigured()) {
@@ -38,13 +37,14 @@ export async function query<T = Record<string, unknown>>(sql: string, params: In
   });
 }
 
-// One lightweight probe to decide whether the DB is reachable. Used by /api/health.
+// One lightweight probe to decide whether the DB is reachable. Used by
+// /api/health and by the sign-in guard, both of which must reflect the CURRENT
+// state: a database that goes away after the app started has to report as
+// unreachable, so this deliberately does not cache a successful probe.
 export async function isDbReady(): Promise<boolean> {
   if (!isTursoConfigured()) return false;
-  if (ready) return true;
   try {
     await getLibsqlClient().execute('SELECT 1');
-    ready = true;
     return true;
   } catch {
     return false;

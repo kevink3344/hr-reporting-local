@@ -27,6 +27,7 @@ import type {
   ViewDefinition,
   AiAnswer,
   AiHistoryItem,
+  FeatureValue,
   HealthStatus,
   StyleTheme,
   StyleThemeInput,
@@ -113,7 +114,13 @@ export async function login(wakeId: string, employeeId: string): Promise<LoginSe
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wakeId, employeeId })
   });
-  if (!response.ok) throw new Error(response.status === 401 ? 'INVALID_CREDENTIALS' : 'LOGIN_FAILED');
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('INVALID_CREDENTIALS');
+    // Surface the server's error code (e.g. DB_UNAVAILABLE, INTERNAL_SERVER_ERROR)
+    // so the sign-on screen can explain why a sign-in could not be attempted.
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? 'LOGIN_FAILED');
+  }
   return response.json() as Promise<LoginSession>;
 }
 
@@ -607,7 +614,6 @@ export function deleteStyleTheme(session: LoginSession, id: string): Promise<voi
 function aiHeaders(session: LoginSession | null | undefined): Record<string, string> {
   return { ...viewHeaders(session), ...scopeHeaders(session) };
 }
-
 export function askAi(session: LoginSession, question: string): Promise<AiAnswer> {
   return request<AiAnswer>('/api/ai/ask', {
     method: 'POST',
@@ -628,6 +634,70 @@ export function deleteAiHistoryItem(session: LoginSession, id: string): Promise<
   return request<void>(`/api/ai/history/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers: aiHeaders(session)
+  });
+}
+
+// ---- Generic feature storage ----
+// Per-user records described by a schema in the database. The value routes are
+// scoped server-side to the `x-user-id` header, so they need no role or school
+// headers — the caller can only ever reach their own records.
+//
+// `request` throws `Error(<error code>)`, which for these routes can be
+// `FEATURE_STORAGE_NOT_READY` (tables not created) or
+// `FEATURE_SCHEMA_NOT_FOUND` (feature not registered). Callers that treat
+// feature storage as an optimisation — the recents modules do — swallow those.
+
+export function getFeatureValues(
+  session: LoginSession | null | undefined,
+  featureKey: string,
+  options?: { scopeKey?: string; limit?: number }
+): Promise<FeatureValue[]> {
+  const params = new URLSearchParams();
+  if (options?.scopeKey) params.set('scopeKey', options.scopeKey);
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  const qs = params.toString();
+  return request<{ featureKey: string; values: FeatureValue[] }>(
+    `/api/feature-values/${encodeURIComponent(featureKey)}${qs ? `?${qs}` : ''}`,
+    { headers: viewHeaders(session) }
+  ).then((body) => body.values);
+}
+
+/**
+ * Store one record. A record whose `uniqueBy` fields match one already stored
+ * replaces it, so this is idempotent for the caller — re-running a search
+ * refreshes its entry rather than adding a second one.
+ */
+export function putFeatureValue(
+  session: LoginSession | null | undefined,
+  featureKey: string,
+  data: Record<string, unknown>,
+  scopeKey?: string | null
+): Promise<FeatureValue> {
+  return request<FeatureValue>(`/api/feature-values/${encodeURIComponent(featureKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...viewHeaders(session) },
+    body: JSON.stringify({ data, scopeKey: scopeKey ?? null })
+  });
+}
+
+export function deleteFeatureValue(
+  session: LoginSession | null | undefined,
+  featureKey: string,
+  valueId: string
+): Promise<void> {
+  return request<void>(
+    `/api/feature-values/${encodeURIComponent(featureKey)}/${encodeURIComponent(valueId)}`,
+    { method: 'DELETE', headers: viewHeaders(session) }
+  );
+}
+
+export function clearFeatureValues(
+  session: LoginSession | null | undefined,
+  featureKey: string
+): Promise<{ removed: number }> {
+  return request<{ removed: number }>(`/api/feature-values/${encodeURIComponent(featureKey)}`, {
+    method: 'DELETE',
+    headers: viewHeaders(session)
   });
 }
 

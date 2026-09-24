@@ -1,0 +1,13 @@
+{
+  "syncedAt": "2026-09-14T14:09:10.228Z",
+  "appStateCleared": [
+    "report_view_comments",
+    "report_view_invites",
+    "report_views",
+    "position_comments",
+    "position_pins",
+    "future_positions",
+    "person_favorites",
+    "ask_history"
+  ]
+}

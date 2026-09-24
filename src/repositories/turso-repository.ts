@@ -1,4 +1,4 @@
-import type { Value } from '@libsql/client';
+import type { InArgs, Value } from '@libsql/client';
 import type {
   FuturePosition,
   GenericReportRowWithSubreport,
@@ -48,6 +48,7 @@ import type {
   StyleTheme
 } from './contracts.js';
 import { getLibsqlClient, query } from '../db-turso.js';
+import { buildFeatureStorage } from '../feature-storage.js';
 import { viewDefinitionSchema } from '../report-views.js';
 
 /** Coerce possibly-undefined model fields into libsql-compatible values. */
@@ -82,7 +83,61 @@ async function executeSubreportColumns(sql: string): Promise<string[]> {
 }
 import { REPORT_ROW_CAP, bindNamedParam, bindOrganization, newId, nowIso, validateReportSql, validateSubreportSql } from '../reports-sql.js';
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
-import { fixtureRepositories } from './fixture-repository.js';
+import { tursoSchoolKpiRepository } from './turso-kpi-repository.js';
+import {
+  buildAdvancedSearchOptionQueries,
+  buildAdvancedSearchResult,
+  buildAdvancedSearchSql,
+  toAdvancedSearchOptions,
+  toAdvancedSearchSourceRow,
+  toContractTypeOption,
+  type AdvancedSearchSqlRow,
+  type ContractTypeSqlRow
+} from '../advanced-search.js';
+import type { AdvancedSearchFilters, AdvancedSearchOptions, AdvancedSearchResult } from '../types.js';
+
+// Advanced search, SQLite dialect. See the note on the `advancedSearch` entry in
+// the repositories object: `../advanced-search.ts` owns the predicate
+// vocabulary and supplies a 'turso' dialect, so only the execution differs from
+// the MySQL implementation.
+type AdvancedSearchPositionNameRow = { pos_name: string | null };
+type AdvancedSearchTenureCodeRow = { tenure_code: string | null };
+
+/**
+ * `../advanced-search.ts` builds its parameter list as `unknown[]` because the
+ * MySQL driver accepts that. libsql is stricter, so convert explicitly instead
+ * of casting: a blind cast would hide an unsupported value until it reached the
+ * wire, where the error is far less clear.
+ */
+function toInArgs(params: unknown[]): Value[] {
+  return params.map((param) => {
+    if (param === null || param === undefined) return null;
+    if (typeof param === 'boolean') return param ? 1 : 0;
+    if (typeof param === 'string' || typeof param === 'number' || typeof param === 'bigint') return param;
+    throw new Error(`Unsupported SQL parameter of type ${typeof param}: ${JSON.stringify(param)}`);
+  });
+}
+
+async function advancedSearch(filters: AdvancedSearchFilters): Promise<AdvancedSearchResult> {
+  const { text, params } = buildAdvancedSearchSql(filters, 'turso');
+  const rows = await query<AdvancedSearchSqlRow>(text, toInArgs(params));
+  return buildAdvancedSearchResult(filters.organization, filters, rows.map(toAdvancedSearchSourceRow));
+}
+
+async function advancedSearchOptions(organization: string): Promise<AdvancedSearchOptions> {
+  const queries = buildAdvancedSearchOptionQueries(organization, 'turso');
+  const [names, types, codes] = await Promise.all([
+    query<AdvancedSearchPositionNameRow>(queries.positionNames.text, toInArgs(queries.positionNames.params)),
+    query<ContractTypeSqlRow>(queries.contractTypes.text, toInArgs(queries.contractTypes.params)),
+    query<AdvancedSearchTenureCodeRow>(queries.contractCodes.text, toInArgs(queries.contractCodes.params))
+  ]);
+
+  return toAdvancedSearchOptions({
+    positionNames: names.map((row) => row.pos_name ?? ''),
+    contractTypes: types.map(toContractTypeOption),
+    contractCodes: codes.map((row) => row.tenure_code ?? '')
+  });
+}
 // Legacy open_pos_read.inc, adapted to SQLite/Turso:
 //   * CONCAT(...) -> COALESCE(...) || '...' (NULL segments become '')
 //   * NOW() -> date('now')
@@ -584,18 +639,18 @@ export const tursoRepositories: Repositories = {
     }
   },
   reports: { openPositions },
-  // Delegated to the fixture on purpose. The Turso replica carries synthetic
-  // seed rows and `cert_info` windows are not mirrored there; writing a third
-  // SQL dialect of the KPI predicates would be a second source of truth for
-  // the metrics. The fixture runs the SAME pure builders as MySQL, so the
-  // contract is satisfied without duplicating the metric definitions.
-  schoolKpi: fixtureRepositories.schoolKpi,
+  // Turso-side KPI. This previously delegated to the fixture because the
+  // replica carried synthetic seed rows and did not mirror `cert_info`. Both
+  // reasons are gone: the replica now holds a masked copy of real data
+  // (cert_info included), so the dialect-specific SQL lives in
+  // ./turso-kpi-repository.ts and shares the row mapping and metric builders
+  // with the MySQL implementation via ../kpi-rows.ts.
+  schoolKpi: tursoSchoolKpiRepository,
   positions: { getPositionDetails, search: searchPositions },
-  // Delegated to the fixture for the same reason as schoolKpi above: one
-  // source of truth for the predicate vocabulary. `advanced-search.ts` owns
-  // the rules and the fixture runs them over its seed rows, so the contract is
-  // satisfied without a third SQL dialect of the same search.
-  advancedSearch: fixtureRepositories.advancedSearch,
+  // Turso-side advanced search. `../advanced-search.ts` already exposes a
+  // 'turso' dialect, so this runs the SAME predicate builders as MySQL over
+  // real rows instead of delegating to the fixture's seed rows.
+  advancedSearch: { search: advancedSearch, searchOptions: advancedSearchOptions },
   reportSections: {
     async list(includeInactive = false) {
       const rows = await query<SectionRow>(
@@ -1608,6 +1663,17 @@ export const tursoRepositories: Repositories = {
       return true;
     }
   },
+  // Feature storage. Same shared SQL as MySQL, with the two SQLite spellings:
+  // `libsql` reports affected rows on the execute result rather than in a
+  // result-set header, and NULL-safe comparison is `IS`.
+  featureStorage: buildFeatureStorage({
+    query: <T>(sql: string, params?: unknown[]) => query<T>(sql, params as InArgs),
+    run: async (sql: string, params?: unknown[]) => {
+      const result = await getLibsqlClient().execute({ sql, args: (params ?? []) as InArgs });
+      return Number(result.rowsAffected ?? 0);
+    },
+    nullSafeEquals: 'IS'
+  }),
   // Turso holds the app's own tables plus a development copy of the reporting
   // data, so there is no meaningful "live" count to compare against a recorded
   // reading. Report nothing and let the page explain why.

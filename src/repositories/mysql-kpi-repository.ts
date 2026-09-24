@@ -1,7 +1,8 @@
 import type { KpiFacet, KpiPositionRow, SchoolKpiPayload, SchoolKpiRowQuery, SchoolKpiRows } from '../types.js';
 import type { SchoolKpiRepository } from './contracts.js';
 import { query } from '../db.js';
-import { buildSchoolKpiPayload, buildSchoolKpiRows, toDateOnlyString } from '../kpi-definitions.js';
+import { buildSchoolKpiPayload, buildSchoolKpiRows } from '../kpi-definitions.js';
+import { toKpiPositionRow, type SchoolKpiSqlRow } from '../kpi-rows.js';
 
 /**
  * The KPI read.
@@ -66,74 +67,6 @@ WHERE (
   AND pi.pos_number NOT LIKE '888%'
   AND pi.organization = ?
 ORDER BY pi.pos_name, pi.pos_number`;
-
-type SchoolKpiSqlRow = {
-  pos_number: string | number | null;
-  pos_name: string | null;
-  organization: string | null;
-  pos_start: string | Date | null;
-  pos_ending: string | Date | null;
-  account_number: string | null;
-  months: string | number | null;
-  a_months: string | number | null;
-  full_name: string | null;
-  emp_number: string | null;
-  person_id: string | null;
-  classroom_assignment: string | null;
-  mailstop: string | null;
-  tenure_code: string | null;
-  contract_id: string | null;
-  contract_end: string | null;
-  tap: string | null;
-  Degree: string | null;
-  cert_next_expiration: string | Date | null;
-};
-
-/** MySQL DECIMAL/INT arrive as strings through some drivers; fold to number. */
-function toNumberOrNull(value: string | number | null | undefined): number | null {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function text(value: string | number | null | undefined): string {
-  return value === null || value === undefined ? '' : String(value);
-}
-
-/**
- * The single occupancy rule, byte-for-byte the one the live Position Details
- * and Open Positions surfaces already use: a seat is filled when the joined
- * employee row carries a name or an employee number. Keeping this identical is
- * what makes the Filled/Vacant tiles agree with the rest of the application.
- */
-function isOccupied(row: SchoolKpiSqlRow): boolean {
-  return Boolean((row.full_name ?? '').trim() || (row.emp_number ?? '').trim());
-}
-
-function toKpiPositionRow(row: SchoolKpiSqlRow): KpiPositionRow {
-  return {
-    posNumber: text(row.pos_number),
-    posName: text(row.pos_name),
-    organization: text(row.organization),
-    accountNumber: text(row.account_number),
-    monthsAvailable: toNumberOrNull(row.months),
-    monthsUsed: toNumberOrNull(row.a_months),
-    occupied: isOccupied(row),
-    fullName: text(row.full_name),
-    employeeNumber: text(row.emp_number),
-    personId: text(row.person_id),
-    classroom: text(row.classroom_assignment),
-    mailstop: text(row.mailstop),
-    tenureCode: text(row.tenure_code),
-    contractId: text(row.contract_id),
-    contractEnd: text(row.contract_end),
-    certNextExpiration: toDateOnlyString(row.cert_next_expiration),
-    posStart: toDateOnlyString(row.pos_start),
-    posEnding: toDateOnlyString(row.pos_ending),
-    tap: text(row.tap),
-    degree: text(row.Degree)
-  };
-}
 
 /**
  * Load every open position at one organization as normalized KPI rows.

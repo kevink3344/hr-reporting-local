@@ -56,6 +56,18 @@ export const hybridRepositories: Repositories = {
   styleThemes: tursoRepositories.styleThemes,
   aiHistory: tursoRepositories.aiHistory,
 
+  // ---- CONFIG, but deliberately MySQL ----
+  // The one place this file departs from "CONFIG lives in Turso". Chosen
+  // explicitly, because the point of `feature_schemas`/`feature_values` is
+  // cross-device recents: a user's recent searches are worthless if they only
+  // exist in a cloud replica that a local `DATA_SOURCE=mysql` run never reads.
+  // Turso also has the better indexes on `feature_values` today (the four
+  // CREATE INDEX statements are still a DBA ticket against live `reporting`),
+  // so if recents ever become hot, moving this line back to Turso is the
+  // optimisation — and it is a one-line change precisely because both
+  // implementations are the same shared code with a different adapter.
+  featureStorage: mysqlRepositories.featureStorage,
+
   // ---- CONFIG: Turso, DATA: MySQL ----
   reportDefinitions: {
     ...tursoRepositories.reportDefinitions,

@@ -1,7 +1,19 @@
 import type { GenericReportRow, GenericReportRowWithSubreport, GenericReportRun, OpenPositionRow, Person, PersonRecord, PositionDetails, School, ReportDefinition, ReportSection, ReportView, ReportViewComment, ReportViewInvite, PositionPin, PositionComment, SystemMessage, SystemMessageType, SystemUser, FuturePosition, ViewDefinition } from '../types.js';
 import type { Repositories, StyleTheme, PositionSearchFilter, PositionSearchHit } from './contracts.js';
-import { query, queryWithDeadline } from '../db.js';
+import { getPool, query, queryWithDeadline } from '../db.js';
 import { REPORT_ROW_CAP, bindNamedParam, bindOrganization, validateReportSql, validateSubreportSql, newId, nowIso } from '../reports-sql.js';
+import { buildFeatureStorage } from '../feature-storage.js';
+
+/**
+ * Affected-row count for a write statement. `query()` above is typed for result
+ * sets, and mysql2 hands a write's `ResultSetHeader` back in the same slot as a
+ * SELECT's rows, so writes need their own accessor rather than a cast buried at
+ * each call site.
+ */
+async function run(sql: string, params: unknown[] = []): Promise<number> {
+  const [result] = await getPool().execute(sql, params as never);
+  return Number((result as { affectedRows?: number }).affectedRows ?? 0);
+}
 import { parseHighlightRules, reportHighlightRulesSchema } from '../report-highlight.js';
 import type { AdvancedSearchFilters, AdvancedSearchOptions, AdvancedSearchResult } from '../types.js';
 import { viewDefinitionSchema } from '../report-views.js';
@@ -2007,6 +2019,20 @@ export const mysqlRepositories: Repositories = {
       return true;
     }
   },
+  // Feature storage. The tables are shared with every other data source —
+  // buildFeatureStorage holds the SQL — so this member supplies only the two
+  // things that differ: how a statement runs, and NULL-safe comparison (MySQL
+  // spells it `<=>`; SQLite spells it `IS`).
+  //
+  // Live `reporting` has both tables but no secondary index on feature_values,
+  // so every lookup here is a scan. At config scale (tens of rows per user)
+  // that is invisible; the four CREATE INDEX statements are filed as a DBA
+  // ticket because the application user holds no CREATE INDEX privilege.
+  featureStorage: buildFeatureStorage({
+    query: <T>(sql: string, params?: unknown[]) => query<T>(sql, params),
+    run: (sql, params) => run(sql, params),
+    nullSafeEquals: '<=>'
+  }),
   // Live row counts for the nightly-refreshed reporting tables. Read-only; the
   // System Information page compares these against the reading the server
   // recorded itself, because the reporting database keeps no load history.

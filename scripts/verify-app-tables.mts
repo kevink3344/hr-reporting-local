@@ -170,6 +170,28 @@ const APP_TABLES: Record<string, TableSpec> = {
     created_at: { type: 'datetime' },
     updated_at: { type: 'datetime' }
   },
+  feature_schemas: {
+    id: { type: 'varchar', pk: true },
+    feature_key: { type: 'varchar' },
+    name: { type: 'varchar' },
+    description: { type: 'varchar', nullable: true },
+    version: { type: 'int', default: '1' },
+    schema_json: { type: 'longtext' },
+    is_active: { type: 'tinyint', default: '1' },
+    created_by: { type: 'varchar', nullable: true },
+    created_at: { type: 'datetime' },
+    updated_at: { type: 'datetime' }
+  },
+  feature_values: {
+    id: { type: 'varchar', pk: true },
+    schema_id: { type: 'varchar' },
+    owner_id: { type: 'varchar', nullable: true },
+    scope_key: { type: 'varchar', nullable: true },
+    data_json: { type: 'longtext' },
+    is_active: { type: 'tinyint', default: '1' },
+    created_at: { type: 'datetime' },
+    updated_at: { type: 'datetime' }
+  },
   ask_history: {
     id: { type: 'varchar', pk: true },
     user_id: { type: 'varchar' },

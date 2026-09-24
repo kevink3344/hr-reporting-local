@@ -2,7 +2,6 @@ import mysql from 'mysql2/promise';
 import { getDbConfig, isDbConfigured } from './config.js';
 
 let pool: mysql.Pool | null = null;
-let ready = false;
 
 function buildSslOption(mode: ReturnType<typeof getDbConfig>['ssl']) {
   if (mode === 'disabled') return undefined;
@@ -96,13 +95,16 @@ export async function queryWithDeadline<T = Record<string, unknown>>(
   }
 }
 
-// One lightweight probe to decide whether the DB is reachable. Used by /api/health.
+// One lightweight probe to decide whether the DB is reachable. Used by
+// /api/health and by the sign-in guard, both of which must reflect the CURRENT
+// state: a database that goes away after the app started (campus network or VPN
+// drop) has to report as unreachable, so this deliberately does not cache a
+// successful probe. The pool's `connectTimeout` bounds a probe against a host
+// that accepts no connection at all.
 export async function isDbReady(): Promise<boolean> {
   if (!isDbConfigured()) return false;
-  if (ready) return true;
   try {
     await getPool().query('SELECT 1');
-    ready = true;
     return true;
   } catch {
     return false;

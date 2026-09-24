@@ -31,6 +31,15 @@ import type {
   SystemUser,
   ViewDefinition
 } from '../types.js';
+import type {
+  FeatureSchema,
+  FeatureSchemaInput,
+  FeatureSchemaUpdate,
+  FeatureValue,
+  FeatureValueInput,
+  FeatureValueQuery,
+  FeatureValueUpdate
+} from '../feature-schema.js';
 
 export interface PeopleRepository {
   list(): Promise<Person[]>;
@@ -514,6 +523,38 @@ export interface SystemInfoRepository {
   snapshot(tables: string[]): Promise<DataSnapshot>;
 }
 
+/**
+ * Generic feature storage: `feature_schemas` describes a record shape in data,
+ * `feature_values` holds the records. It exists so that a new config-shaped
+ * feature (recents, saved views, per-user preferences) is one schema row rather
+ * than a new table plus a hand-written validator and repository.
+ *
+ * Records are JSON blobs, which has two consequences the implementations must
+ * respect: nothing inside `data_json` is queryable (MariaDB 5.5 has no JSON
+ * functions), so identity and ordering are handled in the application; and
+ * `is_active` is a soft flag, so reads default to live rows only.
+ */
+export interface FeatureStorageRepository {
+  listSchemas(): Promise<FeatureSchema[]>;
+  getSchemaByKey(featureKey: string): Promise<FeatureSchema | null>;
+  createSchema(input: FeatureSchemaInput, createdBy?: string | null): Promise<FeatureSchema>;
+  /**
+   * Register a schema if its key is unknown, otherwise bring the stored row in
+   * line with the supplied definition. Idempotent, which is what lets the
+   * server seed the schemas of features it ships with on every start.
+   */
+  ensureSchema(input: FeatureSchemaInput, createdBy?: string | null): Promise<FeatureSchema>;
+  updateSchema(id: string, patch: FeatureSchemaUpdate): Promise<FeatureSchema | null>;
+  listValues(schemaId: string, query?: FeatureValueQuery): Promise<FeatureValue[]>;
+  getValue(id: string): Promise<FeatureValue | null>;
+  createValue(input: FeatureValueInput): Promise<FeatureValue>;
+  updateValue(id: string, patch: FeatureValueUpdate): Promise<FeatureValue | null>;
+  /** `ownerId` puts the ownership check in the WHERE clause rather than a
+   *  preceding SELECT, so another user's row is never even read. */
+  deleteValue(id: string, ownerId?: string | null): Promise<boolean>;
+  clearValues(schemaId: string, ownerId: string): Promise<number>;
+}
+
 export type Repositories = {
   people: PeopleRepository;
   schools: SchoolsRepository;
@@ -534,6 +575,7 @@ export type Repositories = {
   featureFlags: FeatureFlagsRepository;
   styleThemes: StyleThemesRepository;
   aiHistory: AiHistoryRepository;
+  featureStorage: FeatureStorageRepository;
   users: UsersRepository;
   systemInfo: SystemInfoRepository;
 };

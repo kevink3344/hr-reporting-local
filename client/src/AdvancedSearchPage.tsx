@@ -20,7 +20,13 @@ import { exportGenericReportToPdf } from './reportPdf';
 import { SchoolCombobox } from './SchoolCombobox';
 import { formatRelativeTime } from './recentRuns';
 import { loadLastSchool, saveLastSchool } from './lastRun';
-import { recordRecentSearch, removeRecentSearch, loadRecentSearches, type RecentSearch } from './recentSearches';
+import {
+  loadRecentSearches,
+  recordRecentSearch,
+  removeRecentSearch,
+  syncRecentSearches,
+  type RecentSearch
+} from './recentSearches';
 import { applyFilter, applySort, defaultViewDefinition, normalizeViewDefinition, rowKeyForRow } from './reportViews';
 import type {
   AdvancedSearchFilters,
@@ -124,8 +130,17 @@ export function AdvancedSearchPage({
     if (last && schools.some((entry) => entry.id === last)) setSchoolId(last);
   }, [userId, schools, schoolId]);
 
+  // Paint the cached recents, then reconcile with the server. The cache is what
+  // makes the strip appear without waiting for a round trip; the server is what
+  // makes it survive a different browser. A failed sync leaves the cache alone.
   useEffect(() => {
-    setRecents(userId ? loadRecentSearches(userId) : []);
+    let cancelled = false;
+    setRecents(loadRecentSearches(userId));
+    void syncRecentSearches(session, userId).then((next) => {
+      if (!cancelled) setRecents(next);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // Options are per-school: reload on change and drop any name/code that the
@@ -228,7 +243,7 @@ export function AdvancedSearchPage({
       setFilterInput('');
       setColumnsOpen(false);
       if (userId) {
-        setRecents(recordRecentSearch(userId, {
+        setRecents(recordRecentSearch(session, userId, {
           organization: org,
           positionName: effective.positionName || undefined,
           positionType: effective.positionType,
@@ -290,8 +305,7 @@ export function AdvancedSearchPage({
   }
 
   function removeRecent(recent: RecentSearch) {
-    if (!userId) return;
-    setRecents(removeRecentSearch(userId, recent));
+    setRecents(removeRecentSearch(session, userId, recent));
   }
 
   // ---- results view ----
