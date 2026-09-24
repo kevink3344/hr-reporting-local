@@ -196,6 +196,44 @@ export const openApiDocument = {
         }
       }
     },
+    '/employees/by-number': {
+      get: {
+        tags: ['People'],
+        operationId: 'getPersonByEmployeeNumber',
+        summary: 'Resolve an employee number to the full Person, for opening the record drawer',
+        description:
+          'Backs clicking a Name or Employee Num on a Contract Report row. Report rows ' +
+          'carry an `emp_number`, but the record drawer is keyed by `person_id`, so this ' +
+          'resolves the number to the full Person in a single indexed read. Calling ' +
+          "`GET /people?search=` instead hydrated every assignment in the district " +
+          '(~21k rows, ~16s per click).\n\n' +
+          'A miss is reported as 200 with `found: false` — not 404 — matching ' +
+          "`/employees/lookup`. An employee outside the caller's school scope also " +
+          'answers `found: false`, so the endpoint cannot be used to probe for ' +
+          'employees the caller may not see. Unlike `/employees/lookup`, the value here ' +
+          'is one the server itself emitted on a report row rather than something a user ' +
+          'typed, so validation only rejects shapes that cannot be a column value.',
+        parameters: [
+          {
+            name: 'employeeNumber',
+            in: 'query',
+            required: true,
+            description: 'The `emp_number` value from the report row, typically 6 digits.',
+            schema: { type: 'string', pattern: '^[0-9A-Za-z._-]{1,20}$' }
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'Resolution result — `found` discriminates the union',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/PersonByNumberResponse' } } }
+          },
+          '400': {
+            description: '`EMPLOYEE_NUMBER_INVALID` — the number was empty, too long, or contained whitespace or punctuation',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          }
+        }
+      }
+    },
     '/schools': {
       get: {
         tags: ['Schools'],
@@ -1300,6 +1338,24 @@ export const openApiDocument = {
             properties: {
               found: { type: 'boolean', enum: [true] },
               employee: { $ref: '#/components/schemas/EmployeeLookup' }
+            }
+          },
+          {
+            type: 'object',
+            required: ['found'],
+            description: 'No employee carries that number, or the employee is outside the caller\'s school scope.',
+            properties: { found: { type: 'boolean', enum: [false] } }
+          }
+        ]
+      },
+      PersonByNumberResponse: {
+        oneOf: [
+          {
+            type: 'object',
+            required: ['found', 'person'],
+            properties: {
+              found: { type: 'boolean', enum: [true] },
+              person: { $ref: '#/components/schemas/Person' }
             }
           },
           {

@@ -40,7 +40,7 @@ import {
   getKpiMetric,
   isKpiMetricKey
 } from './kpi-definitions.js';
-import type { School, DirectoryResult } from './types.js';
+import type { School, DirectoryResult, Person } from './types.js';
 import { isAiConfigured } from './config.js';
 import { ask as aiAsk, listHistory as aiListHistory, getHistory as aiGetHistory, deleteHistory as aiDeleteHistory } from './ai/ai.js';
 
@@ -63,6 +63,14 @@ const directoryQuerySchema = z.object({
 
 const EMPLOYEE_NUMBER_RE = /^\d{6}$/;
 const POSITION_NUMBER_RE = /^\d{7}$/;
+// Deliberately looser than EMPLOYEE_NUMBER_RE. That pattern validates numbers a
+// *user types* (the directory search, /api/employees/lookup). This one guards
+// /api/employees/by-number, which receives an `emp_number` the server itself put
+// on a report row — so it only needs to reject input that is not a plausible
+// column value (empty, overlong, whitespace or punctuation), not to enforce a
+// format the source data may not follow. A non-matching read is a cheap indexed
+// equality that returns no rows, so leniency costs nothing.
+const EMPLOYEE_NUMBER_TOKEN_RE = /^[0-9A-Za-z._-]{1,20}$/;
 
 const loginSchema = z.object({
   wakeId: z.string().trim().min(1),
@@ -733,15 +741,7 @@ export function createApp(
       // existing substring behaviour over name / employee number / organization.
       const lower = search.toLowerCase();
       const exactEmployee = EMPLOYEE_NUMBER_RE.test(search);
-      const people = (await repositories.people.list()).filter((person) => {
-        const matchesSearch = exactEmployee
-          ? person.employeeNumber === search
-          : [person.fullName, person.employeeNumber, person.organization]
-              .some((value) => value.toLowerCase().includes(lower));
-        const matchesSchool = !query.schoolId || person.organizationId === query.schoolId;
-        return matchesSearch && matchesSchool && orgIsVisible(request, person.organizationId);
-      });
-      const data: DirectoryResult[] = people.map((person) => ({
+      const toPersonResult = (person: Person): DirectoryResult => ({
         kind: 'person' as const,
         personId: person.personId,
         employeeNumber: person.employeeNumber,
@@ -752,7 +752,33 @@ export function createApp(
         positionName: person.positionName,
         positionNumber: '',
         vacant: false as const
-      }));
+      });
+      // The caller's own school filter plus the school permission scope.
+      const personIsVisible = (person: Person): boolean =>
+        (!query.schoolId || person.organizationId === query.schoolId) && orgIsVisible(request, person.organizationId);
+
+      if (exactEmployee) {
+        // A 6-digit search names exactly one person, so read that single indexed
+        // row instead of hydrating every assignment in the district and
+        // filtering in JavaScript — the difference between ~16s and ~0.4s. The
+        // narrow read also returns the person once; `list()` yields a row per
+        // assignment, so a number with several assignments listed them twice.
+        const person = await repositories.people.findPersonByEmployeeNumber(search);
+        const data: DirectoryResult[] = person && personIsVisible(person) ? [toPersonResult(person)] : [];
+        response.json({
+          data: data.slice(start, start + pageSize),
+          page,
+          pageSize,
+          total: data.length,
+          counts: { people: data.length, positions: 0 }
+        });
+        return;
+      }
+
+      const people = (await repositories.people.list()).filter((person) =>
+        [person.fullName, person.employeeNumber, person.organization]
+          .some((value) => value.toLowerCase().includes(lower)) && personIsVisible(person));
+      const data: DirectoryResult[] = people.map(toPersonResult);
       response.json({
         data: data.slice(start, start + pageSize),
         page,
@@ -819,6 +845,46 @@ export function createApp(
         }
       }
       response.json({ found: true, employee });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ---- Open an employee record from an employee number ----
+  // The Contract Report and the directory expose `emp_number` values, but the
+  // record drawer is keyed by `person_id` — so this resolves the number to the
+  // full Person (which carries the id) in one indexed read. Routing this via
+  // `GET /api/people?search=` hydrated all ~21k assignments per click and took
+  // ~16s; the single-row read makes the click feel instant.
+  //
+  // Shape mirrors /api/employees/lookup: a miss (and an out-of-scope employee, so
+  // the endpoint can't probe existence outside the caller's schools) is a normal
+  // 200 `{ found: false }`, never a 404.
+  //
+  // Validation is EMPLOYEE_NUMBER_TOKEN_RE, not the stricter EMPLOYEE_NUMBER_RE:
+  // the caller passes back a value the report handed it, so an unusual-but-real
+  // number must still resolve to its record rather than 400 into an error message
+  // the user can't act on.
+  application.get('/api/employees/by-number', async (request, response, next) => {
+    try {
+      const raw = typeof request.query.employeeNumber === 'string' ? request.query.employeeNumber.trim() : '';
+      if (!EMPLOYEE_NUMBER_TOKEN_RE.test(raw)) {
+        response.status(400).json({ error: 'EMPLOYEE_NUMBER_INVALID' });
+        return;
+      }
+      const person = await repositories.people.findPersonByEmployeeNumber(raw);
+      if (!person) {
+        response.json({ found: false });
+        return;
+      }
+      // `toPerson` resolves organizationId to the school number, which is the
+      // same id space x-user-school-ids carries, so this matches the list
+      // endpoints' visibility rule.
+      if (!orgIsVisible(request, person.organizationId)) {
+        response.json({ found: false });
+        return;
+      }
+      response.json({ found: true, person });
     } catch (error) {
       next(error);
     }

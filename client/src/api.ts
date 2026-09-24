@@ -7,7 +7,9 @@ import type {
   GenericReportRun,
   LoginSession,
   DirectoryPage,
+  Person,
   PersonPage,
+  PersonByNumberResponse,
   PersonRecord,
   PositionComment,
   PositionDetails,
@@ -126,6 +128,16 @@ export async function login(wakeId: string, employeeId: string): Promise<LoginSe
 
 export function getPersonRecord(personId: string): Promise<PersonRecord> {
   return request<PersonRecord>(`/api/people/${encodeURIComponent(personId)}/record`);
+}
+
+// Narrow "employee number -> full Person" read, used when opening a record from
+// a report row or directory result that only carries an employee number.
+// Resolves to null on a miss rather than throwing, so the caller can tell
+// "no such employee" apart from a genuine failure.
+export async function getPersonByEmployeeNumber(employeeNumber: string, session?: LoginSession | null): Promise<Person | null> {
+  const params = new URLSearchParams({ employeeNumber: employeeNumber.trim() });
+  const body = await request<PersonByNumberResponse>(`/api/employees/by-number?${params.toString()}`, { headers: scopeHeaders(session) });
+  return body.found ? body.person : null;
 }
 
 // Position Details — read-only view of a single position (incumbent null when vacant).

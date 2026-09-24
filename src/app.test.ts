@@ -195,6 +195,81 @@ describe('HR Reporting API foundation', () => {
     });
   });
 
+  describe('GET /api/employees/by-number', () => {
+    it('returns the full Person so the drawer can be opened from an employee number', async () => {
+      // The report row only carries an emp_number; the drawer is keyed by
+      // personId. This is the read that used to be `GET /api/people?search=`
+      // (which hydrated all ~21k assignments for one row).
+      const response = await fetch(`${baseUrl}/api/employees/by-number?employeeNumber=900001`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        found: true,
+        person: {
+          personId: 'person-001',
+          employeeNumber: '900001',
+          fullName: 'Example, Alex',
+          organization: 'Test Oak Elementary',
+          organizationId: 'school-001'
+        }
+      });
+    });
+
+    it('reports an unknown number as 200 with found:false', async () => {
+      const response = await fetch(`${baseUrl}/api/employees/by-number?employeeNumber=999999`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ found: false });
+    });
+
+    it.each(['90000', '1234567', 'EMP-900001', '000000'])(
+      'treats the plausible-but-unmatched value %j as a miss, not a validation error',
+      async (employeeNumber) => {
+        // This endpoint receives an emp_number the server put on a report row,
+        // not something a user typed, so an unusual-but-real number must still
+        // resolve. Only shapes that cannot be a column value are rejected.
+        const response = await fetch(`${baseUrl}/api/employees/by-number?employeeNumber=${encodeURIComponent(employeeNumber)}`);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ found: false });
+      }
+    );
+
+    it.each(['', ' ', 'abc 123', 'semi;colon', 'a'.repeat(21)])(
+      'rejects the malformed number %j',
+      async (employeeNumber) => {
+        const response = await fetch(`${baseUrl}/api/employees/by-number?employeeNumber=${encodeURIComponent(employeeNumber)}`);
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: 'EMPLOYEE_NUMBER_INVALID' });
+      }
+    );
+
+    it('trims surrounding whitespace before validating', async () => {
+      // A report cell can carry a stray space; that must not turn a real
+      // employee into a validation failure.
+      const response = await fetch(`${baseUrl}/api/employees/by-number?employeeNumber=${encodeURIComponent(' 900001 ')}`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ found: true, person: { personId: 'person-001' } });
+    });
+
+    it('treats a missing employeeNumber parameter as invalid', async () => {
+      const response = await fetch(`${baseUrl}/api/employees/by-number`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'EMPLOYEE_NUMBER_INVALID' });
+    });
+
+    it('hides employees outside the caller school scope', async () => {
+      const inScope = await fetch(`${baseUrl}/api/employees/by-number?employeeNumber=900001`, {
+        headers: { 'x-user-school-ids': 'school-001', 'x-user-view-all': '0' }
+      });
+      expect(inScope.status).toBe(200);
+      expect(await inScope.json()).toMatchObject({ found: true });
+
+      const outOfScope = await fetch(`${baseUrl}/api/employees/by-number?employeeNumber=900001`, {
+        headers: { 'x-user-school-ids': 'school-002', 'x-user-view-all': '0' }
+      });
+      expect(outOfScope.status).toBe(200);
+      expect(await outOfScope.json()).toEqual({ found: false });
+    });
+  });
+
   it('returns the complete employee record for a selected person', async () => {
     const response = await fetch(`${baseUrl}/api/people/person-001/record`);
     expect(response.status).toBe(200);

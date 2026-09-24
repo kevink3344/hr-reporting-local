@@ -74,6 +74,19 @@ export type EmployeeLookupResponse =
   | { found: true; employee: EmployeeLookup }
   | { found: false };
 
+// Resolving an employee number to the full Person, so the record drawer can be
+// opened from a row that only carries `emp_number`. Mirrors the server's
+// GET /api/employees/by-number.
+//
+// Why a dedicated call: the record drawer is keyed by personId, and the only
+// other way to get one from an employee number was GET /api/people?search=,
+// which hydrates every assignment in the district (~21k rows, ~16s) to serve
+// one row. `found: false` covers both "no such employee" and "not in the
+// caller's schools", matching /api/employees/lookup.
+export type PersonByNumberResponse =
+  | { found: true; person: Person }
+  | { found: false };
+
 // ---- Unified Directory search (people + positions) ----
 // Mirrors server src/types.ts. A person row and a position row answer different
 // questions and open different drawers, so they are a discriminated union

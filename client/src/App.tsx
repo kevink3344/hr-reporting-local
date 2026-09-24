@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ArrowUpRight, BarChart3, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, Clock, Copy, Eye, EyeOff, FileText, Flag, Gauge, GripVertical, Home, Lock, LogOut, Menu, MessageSquare, Moon, Palette, Pencil, Pin, PinOff, Search, SearchCheck, Send, Settings2, SlidersHorizontal, Sun, Trash2, Unlock, UserPlus, Users, X } from 'lucide-react';
-import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getDirectory, getFeatureFlag, getFuturePositionForPosition, getHealthStatus, getPeople, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
+import { checkPositionPins, createPositionComment, createPositionPin, createFuturePosition, deletePositionComment, deletePositionPin, deletePositionPinByKey, getDirectory, getFeatureFlag, getFuturePositionForPosition, getHealthStatus, getPersonByEmployeeNumber, getPersonRecord, getPositionComments, getPositionDetails, getPositionPins, getSchools, getStyleThemes, getSystemMessages, login, sendNowFuturePosition, unlockFuturePosition, updateFuturePosition } from './api';
 import type { DirectoryPositionResult, DirectoryResult, FeatureFlagsResponse, FuturePosition, FuturePositionStatus, HealthStatus, KpiFacet, KpiMetricKey, KpiTarget, LoginSession, Person, PersonRecord, PositionComment, PositionDetails, School, SystemMessage } from './types';
 import { PositionsPage } from './PositionsPage';
 import { AdvancedSearchPage } from './AdvancedSearchPage';
@@ -1481,27 +1481,39 @@ export function App() {
     }
   }
 
+  // Open the record drawer from an employee number. This is the click target on
+  // a Contract Report row and on an employee-number directory result — both
+  // carry an `emp_number`, but the drawer is keyed by `personId`.
+  //
+  // `people` holds the directory page already on screen, so a number that is
+  // visible resolves with no request at all. Otherwise resolve it with the
+  // narrow single-row endpoint. The previous implementation ran
+  // `/api/people?search=`, which hydrated every assignment in the district
+  // (~21k rows, ~16s) to serve one row, and then fell back to `data[0]` when no
+  // exact match was found — so a number that substring-matched several people
+  // could open an arbitrary one. Resolving exactly is both faster and correct.
   async function openRecordByEmployeeNumber(employeeNumber: string) {
     const trimmed = employeeNumber.trim();
     if (!trimmed) return;
     setPositionDetails(null);
     setPositionError('');
-    let person = people.find((candidate) => candidate.employeeNumber === trimmed);
+    let person: Person | null = people.find((candidate) => candidate.employeeNumber === trimmed) ?? null;
     if (!person) {
       try {
-        const result = await getPeople(trimmed, '', session);
-        person = result.data.find((candidate) => candidate.employeeNumber === trimmed) ?? result.data[0] ?? null;
-        if (!person) {
-          setSelectedPerson({ personId: trimmed, employeeNumber: trimmed } as Person);
-          setPersonRecord(null);
-          setRecordError(`No employee record found for ${trimmed}.`);
-          setRecordLoading(false);
-          return;
-        }
+        person = await getPersonByEmployeeNumber(trimmed, session);
       } catch {
         setSelectedPerson({ personId: trimmed, employeeNumber: trimmed } as Person);
         setPersonRecord(null);
         setRecordError('The complete employee record could not be loaded.');
+        setRecordLoading(false);
+        return;
+      }
+      if (!person) {
+        // A number that matches nobody is reported as such rather than opening
+        // whichever row happened to come back first.
+        setSelectedPerson({ personId: trimmed, employeeNumber: trimmed } as Person);
+        setPersonRecord(null);
+        setRecordError(`No employee record found for ${trimmed}.`);
         setRecordLoading(false);
         return;
       }

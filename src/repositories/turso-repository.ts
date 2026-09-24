@@ -605,6 +605,20 @@ export const tursoRepositories: Repositories = {
         contractType: String(rows[0].contract_type ?? ''),
         hireDate: rows[0].hire_date ? String(rows[0].hire_date) : ''
       };
+    },
+    async findPersonByEmployeeNumber(employeeNumber) {
+      // Mirror of the MySQL implementation: one indexed row instead of
+      // hydrating every assignment in the district.
+      const rows = await query<EmployeeRow>(
+        `SELECT * FROM employee_info
+          WHERE emp_number = ?
+          ORDER BY CASE WHEN primary_flag = 'Y' THEN 0 ELSE 1 END,
+                   COALESCE(pos_number, '1'),
+                   COALESCE(hire_date, '9999-12-31')
+          LIMIT 1`,
+        [employeeNumber]
+      );
+      return rows[0] ? toPerson(rows[0]) : null;
     }
   },
   schools: {

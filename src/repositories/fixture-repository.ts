@@ -706,6 +706,10 @@ export const fixtureRepositories: Repositories = {
         contractType: '',
         hireDate: ''
       };
+    },
+    async findPersonByEmployeeNumber(employeeNumber) {
+      const people = await readFixture<Person>('people.json');
+      return people.find((person) => person.employeeNumber === employeeNumber) ?? null;
     }
   },
   schools: { list: () => readFixture<School>('schools.json') },

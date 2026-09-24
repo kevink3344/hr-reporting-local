@@ -49,6 +49,20 @@ export interface PeopleRepository {
    * `{ found: false }`, never a 404).
    */
   findByEmployeeNumber(employeeNumber: string): Promise<EmployeeLookup | null>;
+  /**
+   * Narrow read returning the FULL Person for one employee number.
+   *
+   * `list()` hydrates every assignment in the district — over 21k rows on a
+   * remote MariaDB, which took ~16s per call. Every open-a-record-by-employee-
+   * -number path (a Contract Report name/employee-number click, a 6-digit
+   * directory search) needed exactly one row from that result, so this reads
+   * the single indexed row instead. Returns null on a miss.
+   *
+   * `employee_info` is per-assignment, so the same number can appear on several
+   * rows; the ordering picks the primary assignment, matching
+   * `findByEmployeeNumber` so both lookups agree on which person a number is.
+   */
+  findPersonByEmployeeNumber(employeeNumber: string): Promise<Person | null>;
 }
 
 export interface SchoolsRepository {
