@@ -10,9 +10,9 @@ import {
   WCPSS_STYLE,
   applyStyle,
   loadStyleId,
-  saveStyleId,
   themeToDefinition,
 } from './styleThemes';
+import { persistStylePreference, syncStylePreference } from './stylePreference';
 import type { StyleDefinition } from './styleThemes';
 
 function errorMessage(failure: unknown, fallback: string): string {
@@ -239,10 +239,29 @@ export function StyleConfigurationPage({ session }: { session: LoginSession }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.user.id]);
 
+  // The selection is stored per user on the server, so a style picked on
+  // another machine is the one shown as applied here. `selectedId` already
+  // initialised from the local cache, which is what keeps the page instant;
+  // this only moves the highlight when the server disagrees with it.
+  //
+  // Applying the style itself stays with `App.tsx`, which does it for every
+  // screen when the session changes — two components writing the document's
+  // style attributes on different timings would race each other.
+  useEffect(() => {
+    let cancelled = false;
+    void syncStylePreference(session, session.user.id).then((styleId) => {
+      if (!cancelled) setSelectedId(styleId);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.user.id]);
+
   function applyStyleById(id: string) {
     const style = styles.find((candidate) => candidate.id === id) ?? DEFAULT_STYLE;
     setSelectedId(style.id);
-    saveStyleId(session.user.id, style.id);
+    // Writes the local cache synchronously and the server record in the
+    // background, so the choice survives both this device and the next one.
+    void persistStylePreference(session, session.user.id, style.id);
     applyStyle(style);
     setNotice(`Applied “${style.name}”.`);
   }

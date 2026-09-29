@@ -106,6 +106,38 @@ export const FEATURE_DEFINITIONS: FeatureSchemaInput[] = [
         { key: 'at', type: 'integer', required: true, min: 0 }
       ]
     }
+  },
+  {
+    // The one feature here that is a SETTING rather than a list, which is why
+    // it carries no `scope` and `maxPerOwner: 1`. The client supplies a
+    // CONSTANT `recordKey`, so `uniqueBy: ['recordKey']` resolves every write
+    // to the single row a user can have: picking a style replaces the choice
+    // instead of accumulating a history of every style ever tried. `maxPerOwner`
+    // is then a backstop rather than the mechanism — it guarantees the invariant
+    // even for a row written by something that computed a different key.
+    //
+    // It exists because the style a user picks was localStorage-only, and
+    // localStorage is per origin and per browser: the choice did not follow the
+    // user to another machine, nor from localhost to the deployed site. Keeping
+    // it in `feature_values` needs no table, no DDL and no DBA ticket —
+    // registering this entry is the whole change (see docs/plans/future-features.md §6).
+    featureKey: 'style_preference',
+    name: 'Style preference',
+    description: 'Per-user workspace style chosen in Style Configuration.',
+    version: 1,
+    definition: {
+      uniqueBy: ['recordKey'],
+      maxPerOwner: 1,
+      fields: [
+        { key: 'recordKey', type: 'string', required: true, max: 64 },
+        // An id, not a definition: the style's colors and fonts remain the
+        // server's `style_themes` row (or a built-in), so an admin edit to a
+        // style reaches every user who picked it. Copying the definition here
+        // would pin each user to the version that existed when they chose it.
+        { key: 'styleId', type: 'string', required: true, max: 255 },
+        { key: 'at', type: 'integer', required: true, min: 0 }
+      ]
+    }
   }
 ];
 

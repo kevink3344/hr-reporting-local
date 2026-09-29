@@ -21,6 +21,7 @@ import { DEFAULT_RECORD_LAYOUT, RECORD_SECTION_TITLES, arraysEqual, hiddenSectio
 import type { RecordLayout, RecordSectionId } from './recordLayout';
 import { DEFAULT_SECTION_COLORS, SECTION_COLOR_OPTIONS, clearSectionColor, loadSectionColors, saveSectionColor, sectionHeaderColor } from './sectionColors';
 import { BUILT_IN_STYLES, DEFAULT_STYLE, applyStyle, loadLastAppliedStyle, loadStyleId, themeToDefinition } from './styleThemes';
+import { syncStylePreference } from './stylePreference';
 import { loadHomePage, saveHomePage } from './homePage';
 import type { HomePage } from './homePage';
 import { addRecentPerson, clearRecentPeople, loadRecentPeople, removeRecentPerson, syncRecentPeople } from './recentPeople';
@@ -1097,19 +1098,39 @@ export function App() {
   // an admin-authored style is fetched from the server. Falls back to default.
   // On the sign-in screen (no session) we re-apply the last style used on this
   // device from the local cache so the login screen matches the workspace.
+  //
+  // The choice is a per-user preference stored on the server, which is what
+  // carries it between sessions on DIFFERENT machines. The cached value paints
+  // first — there is no reason to make the ordinary case wait on a round trip —
+  // and the server is asked in parallel, re-applying only when it holds
+  // something the cache did not.
   useEffect(() => {
     if (!session) { applyStyle(loadLastAppliedStyle()); return; }
-    const styleId = loadStyleId(session.user.id);
-    const builtIn = BUILT_IN_STYLES.find((style) => style.id === styleId);
-    if (builtIn) { applyStyle(builtIn); return; }
+    // Captured so the helper below keeps the narrowed type in its closure.
+    const activeSession = session;
     let cancelled = false;
-    getStyleThemes(session)
-      .then((themes) => {
+
+    /** Built-ins need no fetch; an admin-authored style has to come from the API. */
+    async function applyStyleId(styleId: string): Promise<void> {
+      const builtIn = BUILT_IN_STYLES.find((style) => style.id === styleId);
+      if (builtIn) { applyStyle(builtIn); return; }
+      try {
+        const themes = await getStyleThemes(activeSession);
         if (cancelled) return;
         const theme = themes.find((item) => item.id === styleId);
         applyStyle(theme ? themeToDefinition(theme) : DEFAULT_STYLE);
-      })
-      .catch(() => { if (!cancelled) applyStyle(DEFAULT_STYLE); });
+      } catch {
+        if (!cancelled) applyStyle(DEFAULT_STYLE);
+      }
+    }
+
+    const cached = loadStyleId(activeSession.user.id);
+    void applyStyleId(cached);
+    void syncStylePreference(activeSession, activeSession.user.id).then((styleId) => {
+      if (cancelled || styleId === cached) return;
+      void applyStyleId(styleId);
+    });
+
     return () => { cancelled = true; };
   }, [session?.user?.id]);
 
