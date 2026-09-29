@@ -364,6 +364,40 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 17px; } h2 { 
 .report-table-wrap--fit .report-table { table-layout: fixed; width: 100%; }
 .report-table-wrap--fit .report-table th,
 .report-table-wrap--fit .report-table td { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+/* Wide-report scrollbar frame.
+   The table's own horizontal scrollbar sits at the bottom of the rows, so on a
+   long report the right-hand columns are only reachable after scrolling to the
+   end of the data. This mirrors it into a strip at the TOP of the same frame
+   that holds the table and keeps the two scroll positions in sync, so the
+   columns can be reached from the top of the report and from anywhere while
+   scrolling it (see GenericReportView in ReportsPage.tsx).
+   The frame draws the border/background .report-table-wrap used to carry and the
+   strip borrows the header's own colours, so the scrollbar reads as the table's
+   top row rather than as a separate widget stacked above it. */
+/* min-width: 0 because the frame is now the grid item: without it the item's
+   automatic minimum size is the table's full min-content width (3130px on the
+   widest report) and the whole page stretches instead of scrolling. The scroller
+   inside it is what used to absorb that, so the frame has to pass it through. */
+.report-table-frame { min-width: 0; border: 1px solid #d9d0c1; border-radius: 10px; background: rgba(255, 252, 246, .78); }
+/* The scroller keeps the horizontal overflow but hands the frame's look back to
+   the frame, which now wraps both it and the strip. */
+.report-table-frame > .report-table-wrap { border: 0; border-radius: 9px; background: transparent; }
+/* The scrollbar is sized explicitly for both Chromium and Firefox: the default
+   native one is nearly invisible against the table's light surface, which
+   defeats the point of a discoverability cue. box-sizing: content-box so
+   --report-scrollbar-h is the CONTENT height and the scrollbar is not clipped;
+   the strip has no side borders so its client width stays exactly the scroller's
+   (the frame's inner width) and the two scrollLeft values stay in step. */
+.report-table-wrap, .report-table-topscroll { --report-scrollbar-h: 13px; scrollbar-width: thin; scrollbar-color: #a49a8b transparent; }
+.report-table-wrap::-webkit-scrollbar, .report-table-topscroll::-webkit-scrollbar { height: var(--report-scrollbar-h); }
+.report-table-wrap::-webkit-scrollbar-track, .report-table-topscroll::-webkit-scrollbar-track { background: transparent; }
+.report-table-wrap::-webkit-scrollbar-thumb, .report-table-topscroll::-webkit-scrollbar-thumb { background: #a49a8b; border: 3px solid transparent; border-radius: 8px; background-clip: content-box; }
+.report-table-wrap::-webkit-scrollbar-thumb:hover, .report-table-topscroll::-webkit-scrollbar-thumb:hover { background: #7d7568; background-clip: content-box; }
+.report-table-topscroll { box-sizing: content-box; position: sticky; top: 0; z-index: 6; height: var(--report-scrollbar-h); overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid #d9d0c1; border-radius: 9px 9px 0 0; background: #f0ebe1; }
+.report-table-topscroll-spacer { height: 1px; }
+/* Below 680px .report-table-wrap stops scrolling and the rows stack, so there is
+   nothing left for the mirrored strip to drive. */
+@media (max-width: 680px) { .report-table-topscroll { display: none; } }
 
 .report-columns-count { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; background: #edf3ee; color: #2e5e56; font-size: 11px; font-weight: 700; }
 .report-columns-backdrop { position: fixed; inset: 0; z-index: 120; background: rgba(38,35,31,.28); }
@@ -582,6 +616,11 @@ td:first-child .badge-vacant,
 
 /* Dark theme — report data table + muted row highlights */
 [data-theme="dark"] .report-table-wrap { border-color: #3a332a; background: rgba(28, 24, 19, .8); }
+[data-theme="dark"] .report-table-frame { border-color: #3a332a; background: rgba(28, 24, 19, .8); }
+[data-theme="dark"] .report-table-frame > .report-table-wrap { border: 0; background: transparent; }
+[data-theme="dark"] .report-table-topscroll { border-bottom-color: #3a332a; background: #1c1813; }
+[data-theme="dark"] .report-table-wrap, [data-theme="dark"] .report-table-topscroll { scrollbar-color: #6f6558 transparent; }
+[data-theme="dark"] .report-table-wrap::-webkit-scrollbar-thumb, [data-theme="dark"] .report-table-topscroll::-webkit-scrollbar-thumb { background: #6f6558; background-clip: content-box; }
 [data-theme="dark"] .report-table th { color: #c9a066; background: #1c1813; border-bottom-color: #3a332a; }
 [data-theme="dark"] .report-table td { color: #c9c2b5; border-bottom-color: #2c271f; }
 [data-theme="dark"] .report-fit-trigger.is-active { color: #0d2a24; background: #7ecbb5; border-color: #7ecbb5; }
@@ -2124,6 +2163,9 @@ td:first-child .badge-vacant,
 [data-theme="dark"][data-style] .settings-tab { border-color: var(--style-border-dark); color: var(--style-text-dark); background: var(--style-surface-dark); }
 [data-theme="dark"][data-style] .settings-tab.active { color: #fff; background: var(--style-primary); border-color: var(--style-primary); }
 [data-theme="dark"][data-style] .report-table-wrap { border-color: var(--style-border-dark); background: color-mix(in srgb, var(--style-surface-dark) 80%, transparent); }
+[data-theme="dark"][data-style] .report-table-frame { border-color: var(--style-border-dark); background: color-mix(in srgb, var(--style-surface-dark) 80%, transparent); }
+[data-theme="dark"][data-style] .report-table-frame > .report-table-wrap { border: 0; background: transparent; }
+[data-theme="dark"][data-style] .report-table-topscroll { border-bottom-color: var(--style-border-dark); background: var(--style-surface-dark); }
 [data-theme="dark"][data-style] .report-table th { color: var(--style-accent); background: var(--style-surface-dark); border-bottom-color: var(--style-border-dark); }
 [data-theme="dark"][data-style] .report-table td { color: var(--style-text-muted-dark); border-bottom-color: var(--style-border-dark); }
 [data-theme="dark"][data-style] .report-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--style-surface-dark-2) 40%, transparent); }

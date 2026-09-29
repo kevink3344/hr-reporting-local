@@ -169,6 +169,11 @@ function GenericReportView({
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'excel' | 'csv' | 'pdf'>('excel');
   const filterDebounce = useRef<number | null>(null);
+  // Wide-report top scrollbar (see the measuring effect further down).
+  const tableWrapRef = useRef<HTMLDivElement | null>(null);
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const [topScrollWidth, setTopScrollWidth] = useState(0);
+  const [tableViewportWidth, setTableViewportWidth] = useState(0);
 
   // When the columns panel is open, lock body scroll and close on Escape
   useEffect(() => {
@@ -305,6 +310,61 @@ function GenericReportView({
     if (!activeHighlightRule) return filteredRows;
     return filteredRows.filter((row) => ruleMatchesRow(activeHighlightRule, row as Record<string, unknown>));
   }, [filteredRows, activeHighlightRule]);
+
+  // Top scrollbar for wide reports.
+  //
+  // The table's own horizontal scrollbar sits at the BOTTOM of the rows, so on a
+  // 130-row report the right-hand columns are only reachable after scrolling all
+  // the way down (and back up again to read the first columns). This mirrors the
+  // table's scroll width into a sticky bar above the header and keeps the two
+  // scroll positions in sync, so the columns can be reached from the top of the
+  // report and from anywhere while scrolling it.
+  useEffect(() => {
+    // Fit-to-width removes the horizontal overflow entirely — nothing to mirror.
+    if (draft.fitWidth) {
+      setTopScrollWidth(0);
+      setTableViewportWidth(0);
+      return;
+    }
+    const wrap = tableWrapRef.current;
+    if (!wrap) return;
+
+    function measure() {
+      const element = tableWrapRef.current;
+      if (!element) return;
+      setTopScrollWidth(element.scrollWidth);
+      setTableViewportWidth(element.clientWidth);
+    }
+
+    measure();
+    // The wrapper resizes with the window; the table resizes when columns are
+    // hidden/shown or reordered, which can change its scroll width without the
+    // wrapper itself changing size. Watch both.
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    observer?.observe(wrap);
+    if (wrap.firstElementChild) observer?.observe(wrap.firstElementChild);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [displayColumns, displayRows, draft.fitWidth]);
+
+  // Two-way sync. Comparing before assigning stops the two scroll handlers from
+  // bouncing scroll events back and forth at each other.
+  function onTopScroll() {
+    const wrap = tableWrapRef.current;
+    const top = topScrollRef.current;
+    if (wrap && top && wrap.scrollLeft !== top.scrollLeft) wrap.scrollLeft = top.scrollLeft;
+  }
+
+  function onTableScroll() {
+    const wrap = tableWrapRef.current;
+    const top = topScrollRef.current;
+    if (wrap && top && top.scrollLeft !== wrap.scrollLeft) top.scrollLeft = wrap.scrollLeft;
+  }
+
+  const showTopScroll = !draft.fitWidth && topScrollWidth > tableViewportWidth + 1;
 
   function toggleHighlightFilter(ruleId: string) {
     setActiveHighlightFilterId((prev) => (prev === ruleId ? null : ruleId));
@@ -759,7 +819,24 @@ function GenericReportView({
             {filterInput && <button className="link-button" onClick={clearFilter}>Clear text filter</button>}
             {activeHighlightRule && <button className="link-button" onClick={() => setActiveHighlightFilterId(null)}>Clear highlight filter</button>}
           </div>
-        : <div className={`report-table-wrap${draft.fitWidth ? ' report-table-wrap--fit' : ''}`}>
+        : <div className="report-table-frame">
+          {/* Wide reports mirror the table's bottom scrollbar here, inside the same
+              frame as the table, so the right-hand columns are reachable from the
+              top of the report (see the sync handlers above). */}
+          {showTopScroll && (
+            <div
+              className="report-table-topscroll"
+              ref={topScrollRef}
+              onScroll={onTopScroll}
+              tabIndex={-1}
+              aria-hidden="true"
+            >
+              <div className="report-table-topscroll-spacer" style={{ width: topScrollWidth }} />
+            </div>
+          )}
+          {/* The scroller. The table below keeps its indentation to avoid a
+              whitespace-only diff across ~120 lines. */}
+        <div className={`report-table-wrap${draft.fitWidth ? ' report-table-wrap--fit' : ''}`} ref={tableWrapRef} onScroll={onTableScroll}>
           <table className="report-table">
             <thead>
               <tr>
@@ -876,6 +953,7 @@ function GenericReportView({
               })}
             </tbody>
           </table>
+        </div>
         </div>}
 
     {/* Save view modal */}
